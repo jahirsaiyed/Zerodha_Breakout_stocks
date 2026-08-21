@@ -31,10 +31,12 @@ public class UserService {
         return toResponse(user);
     }
 
+    @Transactional(readOnly = true)
     public UserResponse getUserByEmail(String email) {
         return toResponse(findByEmail(email));
     }
 
+    @Transactional(readOnly = true)
     public List<UserResponse> getAllUsers() {
         return userRepository.findAll().stream().map(this::toResponse).toList();
     }
@@ -47,6 +49,7 @@ public class UserService {
         userRepository.save(user);
     }
 
+    @Transactional(readOnly = true)
     public UserConfigResponse getConfigByEmail(String email) {
         UserConfig cfg = userConfigRepository.findByUser_Email(email)
                 .orElseThrow(() -> new IllegalArgumentException("Config not found for: " + email));

@@ -16,21 +16,26 @@ public class UserConfig {
     @OneToOne @JoinColumn(name = "user_id", nullable = false, unique = true)
     private User user;
 
+    @Builder.Default
     @Column(name = "max_positions", nullable = false) private Integer maxPositions = 5;
 
+    @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(name = "position_sizing_method", nullable = false)
     private PositionSizingMethod positionSizingMethod = PositionSizingMethod.FIXED;
 
+    @Builder.Default
     @Column(name = "position_sizing_value", nullable = false)
     private BigDecimal positionSizingValue = new BigDecimal("10000");
 
+    @Builder.Default
     @Column(name = "order_expiry_days", nullable = false) private Integer orderExpiryDays = 5;
     @Column(name = "zerodha_api_key") private String zerodhaApiKey;
     @Column(name = "zerodha_api_secret") private String zerodhaApiSecret;     // stored encrypted
     @Column(name = "zerodha_access_token") private String zerodhaAccessToken; // stored encrypted
     @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
     @Column(name = "telegram_chat_id") private String telegramChatId;
+    @Builder.Default
     @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
 
     @UpdateTimestamp
