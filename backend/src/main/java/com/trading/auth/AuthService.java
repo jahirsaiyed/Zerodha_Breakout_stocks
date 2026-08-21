@@ -6,6 +6,7 @@ import com.trading.users.UserRepository;
 import com.trading.users.dto.UserResponse;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseCookie;
 import org.springframework.security.authentication.BadCredentialsException;
@@ -21,6 +22,8 @@ public class AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtUtil jwtUtil;
 
+    @Value("${cookie.secure:false}") private boolean cookieSecure;
+
     public UserResponse login(LoginRequest req, HttpServletResponse response) {
         User user = userRepository.findByEmail(req.email())
                 .orElseThrow(() -> new BadCredentialsException("Invalid credentials"));
@@ -30,7 +33,7 @@ public class AuthService {
 
         String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
         ResponseCookie cookie = ResponseCookie.from("jwt", token)
-                .httpOnly(true).secure(false).path("/")
+                .httpOnly(true).secure(cookieSecure).path("/")
                 .maxAge(Duration.ofHours(24)).sameSite("Strict").build();
         response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
 
@@ -40,7 +43,7 @@ public class AuthService {
 
     public void logout(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from("jwt", "")
-                .httpOnly(true).secure(false).path("/").maxAge(0).build();
+                .httpOnly(true).secure(cookieSecure).path("/").maxAge(0).build();
         response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
     }
 }

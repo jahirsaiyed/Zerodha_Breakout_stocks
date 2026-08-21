@@ -31,6 +31,9 @@ encryption:
 cors:
   allowed-origin: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
+cookie:
+  secure: ${COOKIE_SECURE:false}
+
 logging:
   level:
     root: INFO
