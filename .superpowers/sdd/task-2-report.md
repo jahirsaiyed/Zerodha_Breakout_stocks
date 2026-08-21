@@ -21,7 +21,7 @@ SQL was verified by static review:
 - cors.allowed-origin bound from CORS_ALLOWED_ORIGINS with default http://localhost:5173
 - TradingApplication.java has @SpringBootApplication + @EnableScheduling in package com.trading
 
-COMMITS: [pending — see below]
+COMMITS: 05118fa - feat: database schema V1 migration and Spring Boot bootstrap
 
 CONCERNS:
 - Docker not running: Flyway migration could not be executed live. SQL correctness verified by
