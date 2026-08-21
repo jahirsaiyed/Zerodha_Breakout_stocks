@@ -21,8 +21,8 @@ export function LoginPage() {
     const form = new FormData(e.currentTarget)
     try {
       await api.post('/auth/login', {
-        email: form.get('email'),
-        password: form.get('password'),
+        email: form.get('email') as string,
+        password: form.get('password') as string,
       })
       await queryClient.invalidateQueries({ queryKey: ['me'] })
       navigate('/')
