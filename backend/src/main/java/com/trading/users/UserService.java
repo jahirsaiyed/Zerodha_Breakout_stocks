@@ -6,7 +6,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.LocalDateTime;
 import java.util.List;
 
 @Service
@@ -25,7 +24,7 @@ public class UserService {
         User user = User.builder()
                 .name(req.name()).email(req.email())
                 .passwordHash(passwordEncoder.encode(req.password()))
-                .role(req.role() != null ? req.role() : User.UserRole.USER)
+                .role(req.role() != null ? req.role() : UserRole.USER)
                 .active(true).build();
         user = userRepository.save(user);
         userConfigRepository.save(UserConfig.builder().user(user).build());
@@ -66,7 +65,6 @@ public class UserService {
         if (req.zerodhaApiKey() != null) cfg.setZerodhaApiKey(req.zerodhaApiKey());
         if (req.zerodhaApiSecret() != null)
             cfg.setZerodhaApiSecret(encryptionUtil.encrypt(req.zerodhaApiSecret()));
-        cfg.setUpdatedAt(LocalDateTime.now());
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 

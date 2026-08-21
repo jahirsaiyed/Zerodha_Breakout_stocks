@@ -2,6 +2,7 @@ package com.trading.users;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.UpdateTimestamp;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
@@ -31,7 +32,7 @@ public class UserConfig {
     @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
     @Column(name = "telegram_chat_id") private String telegramChatId;
     @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
-    @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt = LocalDateTime.now();
 
-    public enum PositionSizingMethod { EQUAL, FIXED, RISK_BASED }
+    @UpdateTimestamp
+    @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt;
 }

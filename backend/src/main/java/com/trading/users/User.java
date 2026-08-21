@@ -2,6 +2,7 @@ package com.trading.users;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
 import java.time.LocalDateTime;
 
 @Entity
@@ -20,8 +21,7 @@ public class User {
 
     @Column(nullable = false) private Boolean active = true;
 
+    @CreationTimestamp
     @Column(name = "created_at", nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
-
-    public enum UserRole { ADMIN, USER }
+    private LocalDateTime createdAt;
 }

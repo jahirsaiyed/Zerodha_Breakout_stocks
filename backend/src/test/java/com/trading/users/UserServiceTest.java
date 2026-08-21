@@ -28,7 +28,7 @@ class UserServiceTest {
         when(userRepository.existsByEmail("alice@test.com")).thenReturn(false);
         when(passwordEncoder.encode("password123")).thenReturn("hashed");
         User saved = User.builder().id(1L).name("Alice").email("alice@test.com")
-                .passwordHash("hashed").role(User.UserRole.USER).active(true).build();
+                .passwordHash("hashed").role(UserRole.USER).active(true).build();
         when(userRepository.save(any())).thenReturn(saved);
 
         UserResponse result = userService.createUser(
