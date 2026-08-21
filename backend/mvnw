@@ -1,0 +1,39 @@
+#!/bin/sh
+# ----------------------------------------------------------------------------
+# Maven Wrapper startup script for POSIX systems (Linux, macOS, Alpine, etc.)
+# Generated for use with Maven 3.9.6
+# ----------------------------------------------------------------------------
+
+set -e
+
+MAVEN_WRAPPER_JAR=".mvn/wrapper/maven-wrapper.jar"
+MAVEN_WRAPPER_PROPERTIES=".mvn/wrapper/maven-wrapper.properties"
+MAVEN_PROJECTBASEDIR="${MAVEN_PROJECTBASEDIR:-$(pwd)}"
+
+# Locate JAVA_HOME
+if [ -n "$JAVA_HOME" ]; then
+    JAVACMD="$JAVA_HOME/bin/java"
+elif command -v java > /dev/null 2>&1; then
+    JAVACMD="java"
+else
+    echo "Error: JAVA_HOME is not set and 'java' could not be found in PATH." >&2
+    exit 1
+fi
+
+# Download the wrapper JAR if missing
+if [ ! -f "$MAVEN_WRAPPER_JAR" ]; then
+    WRAPPER_URL=$(grep '^wrapperUrl=' "$MAVEN_WRAPPER_PROPERTIES" | cut -d= -f2-)
+    if command -v curl > /dev/null 2>&1; then
+        curl -fsSL -o "$MAVEN_WRAPPER_JAR" "$WRAPPER_URL"
+    elif command -v wget > /dev/null 2>&1; then
+        wget -q -O "$MAVEN_WRAPPER_JAR" "$WRAPPER_URL"
+    else
+        echo "Error: neither curl nor wget is available to download the Maven wrapper JAR." >&2
+        exit 1
+    fi
+fi
+
+exec "$JAVACMD" \
+    -classpath "$MAVEN_WRAPPER_JAR" \
+    "-Dmaven.multiModuleProjectDirectory=$MAVEN_PROJECTBASEDIR" \
+    org.apache.maven.wrapper.MavenWrapperMain "$@"

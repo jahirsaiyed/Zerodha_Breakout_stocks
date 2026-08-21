@@ -1,0 +1,20 @@
+# Environment secrets — NEVER commit
+.env
+
+# Maven build output
+backend/target/
+backend/.mvn/wrapper/maven-wrapper.jar
+
+# Node / frontend build output
+frontend/node_modules/
+frontend/dist/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
