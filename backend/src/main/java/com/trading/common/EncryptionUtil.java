@@ -20,8 +20,10 @@ public class EncryptionUtil {
 
     public EncryptionUtil(@Value("${encryption.key}") String key) {
         byte[] raw = key.getBytes(StandardCharsets.UTF_8);
-        keyBytes = new byte[32];
-        System.arraycopy(raw, 0, keyBytes, 0, Math.min(raw.length, 32));
+        if (raw.length < 32) {
+            throw new IllegalStateException("ENCRYPTION_KEY must be at least 32 characters");
+        }
+        keyBytes = Arrays.copyOf(raw, 32);
     }
 
     public String encrypt(String plaintext) {

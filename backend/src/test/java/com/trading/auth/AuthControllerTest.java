@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @WebMvcTest(AuthController.class)
 @Import(com.trading.config.SecurityConfig.class)
 @TestPropertySource(properties = {
-        "cors.allowed-origin=http://localhost:3000",
+        "cors.allowed-origins=http://localhost:3000",
         "jwt.secret=test-secret-key-that-is-at-least-64-characters-long-for-hmac-sha"
 })
 class AuthControllerTest {

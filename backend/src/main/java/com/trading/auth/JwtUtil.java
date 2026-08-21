@@ -16,6 +16,9 @@ public class JwtUtil {
     private static final long EXPIRY_MS = 24L * 60 * 60 * 1000;
 
     public JwtUtil(@Value("${jwt.secret}") String secret) {
+        if (secret.length() < 64) {
+            throw new IllegalStateException("JWT_SECRET must be at least 64 characters");
+        }
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
