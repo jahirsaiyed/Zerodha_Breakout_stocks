@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://trading-backend.onrender.com/api/:path*"
+      "destination": "https://zerodha-breakout-stocks.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
