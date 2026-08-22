@@ -18,6 +18,9 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -123,7 +126,8 @@ class PortfolioControllerTest {
                 .zerodhaOrderId("ZOrder123").build();
 
         when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
-        when(orderRepository.findByUserId(1L)).thenReturn(List.of(order));
+        when(orderRepository.findByUserIdOrderByPlacedAtDesc(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(order)));
 
         mockMvc.perform(get("/api/portfolio/orders"))
                 .andExpect(status().isOk())

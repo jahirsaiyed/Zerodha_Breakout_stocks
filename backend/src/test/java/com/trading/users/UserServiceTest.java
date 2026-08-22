@@ -54,4 +54,40 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.setUserActive(99L, false))
                 .isInstanceOf(IllegalArgumentException.class);
     }
+
+    @Test
+    void changePassword_correctCurrentPassword_updatesHash() {
+        User user = User.builder().id(1L).email("alice@test.com").passwordHash("oldHash").build();
+        when(userRepository.findByEmail("alice@test.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("oldPass", "oldHash")).thenReturn(true);
+        when(passwordEncoder.encode("newPass123")).thenReturn("newHash");
+
+        userService.changePassword("alice@test.com", "oldPass", "newPass123");
+
+        verify(passwordEncoder).encode("newPass123");
+        verify(userRepository).save(user);
+        assertThat(user.getPasswordHash()).isEqualTo("newHash");
+    }
+
+    @Test
+    void changePassword_wrongCurrentPassword_throwsIllegalArgument() {
+        User user = User.builder().id(1L).email("alice@test.com").passwordHash("oldHash").build();
+        when(userRepository.findByEmail("alice@test.com")).thenReturn(Optional.of(user));
+        when(passwordEncoder.matches("wrongPass", "oldHash")).thenReturn(false);
+
+        assertThatThrownBy(() -> userService.changePassword("alice@test.com", "wrongPass", "newPass123"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Current password is incorrect");
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void changePassword_userNotFound_throwsIllegalArgument() {
+        when(userRepository.findByEmail("nobody@test.com")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> userService.changePassword("nobody@test.com", "old", "new12345"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("User not found");
+    }
 }

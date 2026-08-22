@@ -18,8 +18,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import org.springframework.data.domain.PageRequest;
+
 import java.math.BigDecimal;
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -107,13 +108,18 @@ public class PortfolioController {
 
     /**
      * GET /api/portfolio/orders
-     * Returns all orders for the authenticated user, sorted newest first.
+     * Returns orders for the authenticated user, sorted newest first, paginated.
+     * Defaults: page=0, size=50.
      */
     @GetMapping("/orders")
-    public List<OrderResponse> getOrders(@AuthenticationPrincipal UserDetails principal) {
+    public List<OrderResponse> getOrders(
+            @AuthenticationPrincipal UserDetails principal,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "50") int size) {
         Long userId = resolveUserId(principal);
-        return orderRepository.findByUserId(userId).stream()
-                .sorted(Comparator.comparing(Order::getPlacedAt).reversed())
+        return orderRepository.findByUserIdOrderByPlacedAtDesc(userId, PageRequest.of(page, size))
+                .getContent()
+                .stream()
                 .map(OrderResponse::from)
                 .toList();
     }
