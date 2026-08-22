@@ -119,7 +119,7 @@ public class PortfolioEngine {
         try {
             String orderId = broker.placeLimitOrder(signal.getSymbol(), qty, signal.getEntryPrice(), tag);
             db.recordEntryOrder(positionId, config, signal, orderId, qty);
-            events.publishEvent(new OrderPlacedEvent(positionId, orderId));
+            events.publishEvent(new OrderPlacedEvent(positionId, signal.getSymbol(), orderId));
             log.info("Entry order placed: pos={} order={} symbol={} qty={} price={}",
                     positionId, orderId, signal.getSymbol(), qty, signal.getEntryPrice());
         } catch (BrokerOrderException e) {
@@ -168,7 +168,7 @@ public class PortfolioEngine {
             handleFill(config, broker, pos, detail);
         } else if (detail.isFailed()) {
             db.markPositionCancelled(pos.getId());
-            events.publishEvent(new OrderCancelledEvent(pos.getId(), orderId, detail.status().name()));
+            events.publishEvent(new OrderCancelledEvent(pos.getId(), pos.getSymbol(), orderId, detail.status().name()));
             log.info("Fill check — pos {} order {} {}", pos.getId(), orderId, detail.status());
         } else {
             // Still PENDING — check expiry
@@ -198,7 +198,7 @@ public class PortfolioEngine {
         }
 
         db.activatePosition(pos.getId(), filledQty, detail.avgPrice(), gttId);
-        events.publishEvent(new OrderFilledEvent(pos.getId(), pos.getEntryOrderId(),
+        events.publishEvent(new OrderFilledEvent(pos.getId(), pos.getSymbol(), pos.getEntryOrderId(),
                 filledQty, detail.avgPrice(), gttId));
         log.info("Fill detected: pos={} qty={} avgPrice={} gttId={}", pos.getId(), filledQty, detail.avgPrice(), gttId);
     }
@@ -214,7 +214,7 @@ public class PortfolioEngine {
                     log.warn("Could not cancel expired order {}: {}", orderId, e.getMessage());
                 }
                 db.markPositionCancelled(pos.getId());
-                events.publishEvent(new OrderExpiredEvent(pos.getId(), orderId));
+                events.publishEvent(new OrderExpiredEvent(pos.getId(), pos.getSymbol(), orderId));
                 log.info("Order expired: pos={} order={} ageDays={}", pos.getId(), orderId, ageDays);
             }
         });

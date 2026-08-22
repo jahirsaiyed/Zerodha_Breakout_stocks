@@ -50,6 +50,11 @@ sheets:
   credentials-path: ${SHEETS_CREDENTIALS_PATH:}
   range: ${SHEETS_RANGE:Sheet1!A2:E}
 
+telegram:
+  enabled: ${TELEGRAM_ENABLED:false}
+  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  base-url: ${TELEGRAM_BASE_URL:https://api.telegram.org}
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
