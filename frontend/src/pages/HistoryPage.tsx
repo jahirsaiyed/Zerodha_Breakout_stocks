@@ -101,7 +101,7 @@ export function HistoryPage() {
               <YAxis tickFormatter={v => `₹${v}`} tick={{ fontSize: 11, fill: '#9ca3af' }} width={70} />
               <ReferenceLine y={0} stroke="#e5e7eb" />
               <Tooltip
-                formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Cumulative P&L']}
+                formatter={(value) => [`₹${Number(value).toFixed(2)}`, 'Cumulative P&L']}
                 contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
               />
               <Area type="monotone" dataKey="cumPnl" stroke="#6366f1" strokeWidth={2}
