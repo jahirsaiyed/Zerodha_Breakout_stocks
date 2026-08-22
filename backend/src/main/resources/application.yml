@@ -20,19 +20,33 @@ spring:
     locations: classpath:db/migration
 
 server:
-  port: 8080
+  port: 9006
 
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET:testvbeh45u6j64j6wh5j66j55wh45j75wtyrh45wu76j5765j6j65j66u6j665j57k5k57k75k57k7k75}
 
 encryption:
-  key: ${ENCRYPTION_KEY}
+  key: ${ENCRYPTION_KEY:testvbeh45u6j64j6wh5j66j55wh45j75wtyrh45wu76j5765j6j65j66u6j665j57k5k57k75k57k7k75}
 
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
 
 cookie:
   secure: ${COOKIE_SECURE:false}
+
+sheets:
+  enabled: ${SHEETS_ENABLED:false}
+  spreadsheet-id: ${SHEETS_SPREADSHEET_ID:}
+  credentials-path: ${SHEETS_CREDENTIALS_PATH:}
+  range: ${SHEETS_RANGE:Sheet1!A2:E}
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    tags-sorter: alpha
+    operations-sorter: alpha
+  api-docs:
+    path: /v3/api-docs
 
 logging:
   level:

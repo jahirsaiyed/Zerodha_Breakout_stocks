@@ -38,6 +38,7 @@ class SignalControllerTest {
     @Autowired ObjectMapper objectMapper;
 
     @MockBean SignalService signalService;
+    @MockBean SheetSyncService sheetSyncService;
     @MockBean com.trading.auth.JwtUtil jwtUtil;
 
     private static final SignalResponse SAMPLE = new SignalResponse(
@@ -157,6 +158,18 @@ class SignalControllerTest {
         mockMvc.perform(get("/api/signals/sync-log"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].signalsAdded").value(2));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("POST /api/signals/sync returns 200 with sync result")
+    void syncNow_returns200() throws Exception {
+        when(sheetSyncService.sync()).thenReturn(new SyncResult(1, 0, 0, 0));
+
+        mockMvc.perform(post("/api/signals/sync"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.added").value(1));
     }
 
     @Test

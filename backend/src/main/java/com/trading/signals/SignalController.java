@@ -19,6 +19,7 @@ import java.util.List;
 public class SignalController {
 
     private final SignalService signalService;
+    private final SheetSyncService sheetSyncService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<List<SignalResponse>>> list(
@@ -48,5 +49,11 @@ public class SignalController {
     @GetMapping("/sync-log")
     public ResponseEntity<ApiResponse<List<SyncLogResponse>>> syncLog() {
         return ResponseEntity.ok(ApiResponse.success(signalService.getSyncLog()));
+    }
+
+    @PostMapping("/sync")
+    public ResponseEntity<ApiResponse<SyncResult>> syncNow() {
+        SyncResult result = sheetSyncService.sync();
+        return ResponseEntity.ok(ApiResponse.success(result));
     }
 }
