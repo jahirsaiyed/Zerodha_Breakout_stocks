@@ -34,6 +34,11 @@ cors:
 cookie:
   secure: ${COOKIE_SECURE:false}
 
+zerodha:
+  base-url: ${ZERODHA_BASE_URL:https://api.kite.trade}
+  connect-timeout-ms: ${ZERODHA_CONNECT_TIMEOUT_MS:10000}
+  read-timeout-ms: ${ZERODHA_READ_TIMEOUT_MS:30000}
+
 sheets:
   enabled: ${SHEETS_ENABLED:false}
   spreadsheet-id: ${SHEETS_SPREADSHEET_ID:}
