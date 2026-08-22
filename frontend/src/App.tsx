@@ -2,10 +2,18 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './contexts/AuthContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
+import { Layout } from './components/Layout'
 import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
+import { PositionsPage } from './pages/PositionsPage'
+import { SignalsPage } from './pages/SignalsPage'
+import { HistoryPage } from './pages/HistoryPage'
+import { SettingsPage } from './pages/SettingsPage'
+import { AdminPage } from './pages/AdminPage'
 
-const queryClient = new QueryClient()
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
+})
 
 function AppRoutes() {
   return (
@@ -13,8 +21,15 @@ function AppRoutes() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+          <Route element={<Layout />}>
+            <Route path="/"          element={<DashboardPage />} />
+            <Route path="/positions" element={<PositionsPage />} />
+            <Route path="/signals"   element={<SignalsPage />} />
+            <Route path="/history"   element={<HistoryPage />} />
+            <Route path="/settings"  element={<SettingsPage />} />
+            <Route path="/admin"     element={<AdminPage />} />
+            <Route path="*"          element={<Navigate to="/" replace />} />
+          </Route>
         </Route>
       </Routes>
     </AuthProvider>
