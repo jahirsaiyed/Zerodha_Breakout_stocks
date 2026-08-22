@@ -2,7 +2,10 @@ spring:
   application:
     name: trading-backend
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
+    # DB_URL takes precedence (local dev / custom setups).
+    # On Render, individual DB_HOST/DB_PORT/DB_NAME are injected from the managed database
+    # and the JDBC URL is assembled from those when DB_URL is not set.
+    url: ${DB_URL:jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:trading}}
     username: ${DB_USERNAME:trading}
     password: ${DB_PASSWORD:trading}
     driver-class-name: org.postgresql.Driver
@@ -20,7 +23,8 @@ spring:
     locations: classpath:db/migration
 
 server:
-  port: 9006
+  # Render.com injects PORT dynamically; fall back to 9006 for local development
+  port: ${PORT:9006}
 
 jwt:
   secret: ${JWT_SECRET:testvbeh45u6j64j6wh5j66j55wh45j75wtyrh45wu76j5765j6j65j66u6j665j57k5k57k75k57k7k75}

@@ -1,0 +1,23 @@
+{
+  "buildCommand": "cd frontend && npm ci && npm run build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "echo skip-root-install",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://trading-backend.onrender.com/api/:path*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "X-Forwarded-Host", "value": "$host" }
+      ]
+    }
+  ]
+}
