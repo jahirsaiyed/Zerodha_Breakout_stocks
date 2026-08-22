@@ -24,6 +24,12 @@ public class ZerodhaBrokerAdapter implements BrokerAdapter {
     }
 
     @Override
+    public String placeMarketSellOrder(String symbol, int quantity, String tag) {
+        log.debug("Placing market sell: symbol={} qty={} tag={}", symbol, quantity, tag);
+        return apiClient.placeMarketSellOrder(symbol, quantity, tag);
+    }
+
+    @Override
     public String placeGttOcoOrder(String symbol, int quantity,
                                    BigDecimal stopLoss, BigDecimal target, String tag) {
         // Zerodha GTT requires the current last price in the condition

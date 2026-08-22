@@ -73,6 +73,19 @@ class ZerodhaBrokerAdapterTest {
                 .hasMessageContaining("LTP");
     }
 
+    // ── placeMarketSellOrder ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("placeMarketSellOrder delegates to apiClient and returns order ID")
+    void placeMarketSellOrder_delegatesAndReturnsOrderId() {
+        when(apiClient.placeMarketSellOrder("RELIANCE", 10, "pos_1_manual")).thenReturn("sell123");
+
+        String orderId = adapter.placeMarketSellOrder("RELIANCE", 10, "pos_1_manual");
+
+        assertThat(orderId).isEqualTo("sell123");
+        verify(apiClient).placeMarketSellOrder("RELIANCE", 10, "pos_1_manual");
+    }
+
     // ── cancelOrder ──────────────────────────────────────────────────────────
 
     @Test

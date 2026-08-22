@@ -24,6 +24,12 @@ public interface BrokerAdapter {
     String placeLimitOrder(String symbol, int quantity, BigDecimal price, String tag);
 
     /**
+     * Places a CNC market sell order (used for manual exits).
+     * @return broker-assigned order ID
+     */
+    String placeMarketSellOrder(String symbol, int quantity, String tag);
+
+    /**
      * Places a two-leg GTT OCO order (stop-loss + target) for a held position.
      * @return broker-assigned GTT trigger ID
      */

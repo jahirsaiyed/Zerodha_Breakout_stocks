@@ -148,6 +148,22 @@ public class PortfolioDbService {
     }
 
     @Transactional
+    public void recordManualExitOrder(Long positionId, String zerodhaOrderId) {
+        Position position = positionRepository.findById(positionId).orElseThrow();
+        Order order = Order.builder()
+                .user(position.getUser())
+                .position(position)
+                .zerodhaOrderId(zerodhaOrderId)
+                .type(OrderType.EXIT_MANUAL)
+                .orderKind(OrderKind.MARKET)
+                .symbol(position.getSymbol())
+                .quantity(position.getQuantity())
+                .status(OrderStatus.PENDING)
+                .build();
+        orderRepository.save(order);
+    }
+
+    @Transactional
     public void closePosition(Long positionId, PositionStatus closeStatus, BigDecimal realisedPnl) {
         Position position = positionRepository.findById(positionId).orElseThrow();
         position.setStatus(closeStatus);

@@ -309,19 +309,28 @@ public class PortfolioEngine {
 
         BrokerAdapter broker = brokerAdapterFactory.forUser(config);
 
-        // Cancel GTT
+        // Cancel GTT so it doesn't fire after we sell
         if (pos.getGttOrderId() != null) {
             try { broker.cancelGttOrder(pos.getGttOrderId()); }
             catch (Exception e) { log.warn("Could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
         }
 
-        // Place market sell — for manual exit, we don't use placeLimitOrder
-        // Market sell is done via Zerodha MARKET order; we reuse the limit order path
-        // with the current market price (actual market order type deferred to broker API extension)
-        // For now, record the close and let the user confirm in Zerodha manually
+        // Place CNC market sell order to actually exit the position
+        String tag = "pos_" + positionId + "_manual";
+        String sellOrderId;
+        try {
+            sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
+            db.recordManualExitOrder(positionId, sellOrderId);
+            log.info("Market sell placed: pos={} symbol={} qty={} order={}",
+                    positionId, pos.getSymbol(), pos.getQuantity(), sellOrderId);
+        } catch (BrokerOrderException e) {
+            log.error("Market sell failed for pos={} symbol={}: {} — position closed in DB anyway",
+                    positionId, pos.getSymbol(), e.getMessage());
+        }
+
         db.closePosition(positionId, PositionStatus.CLOSED_MANUAL, null);
         events.publishEvent(new PositionClosedEvent(positionId, pos.getSymbol(),
                 PositionStatus.CLOSED_MANUAL, null));
-        log.info("Manual exit triggered: pos={} symbol={}", positionId, pos.getSymbol());
+        log.info("Manual exit complete: pos={} symbol={}", positionId, pos.getSymbol());
     }
 }
