@@ -13,6 +13,7 @@ const TYPE_LABEL: Record<string, string> = {
   ENTRY:       'Entry',
   EXIT_TARGET: 'Exit (Target)',
   EXIT_SL:     'Exit (SL)',
+  EXIT_MANUAL: 'Exit (Manual)',
 }
 
 export function OrdersPage() {

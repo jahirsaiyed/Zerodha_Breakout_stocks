@@ -71,6 +71,23 @@ public class ZerodhaApiClient {
         });
     }
 
+    public String placeMarketSellOrder(String symbol, int quantity, String tag) {
+        return executeWithRetry(() -> {
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("exchange", "NSE");
+            form.add("tradingsymbol", symbol);
+            form.add("transaction_type", "SELL");
+            form.add("quantity", String.valueOf(quantity));
+            form.add("order_type", "MARKET");
+            form.add("product", "CNC");
+            form.add("validity", "DAY");
+            form.add("tag", tag);
+
+            JsonNode data = postForm("/orders/regular", form);
+            return data.path("order_id").asText();
+        });
+    }
+
     public String placeGttOcoOrder(String symbol, int quantity,
                                    BigDecimal stopLoss, BigDecimal target,
                                    BigDecimal lastPrice, String tag) {

@@ -214,7 +214,7 @@ class PortfolioEngineTest {
     // ── manualExit ───────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("manualExit marks position CLOSED_MANUAL")
+    @DisplayName("manualExit cancels GTT, places market sell, closes position")
     void manualExit_activePosition_closesManually() {
         Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
         Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
@@ -222,11 +222,33 @@ class PortfolioEngineTest {
         when(db.getActivePositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString())).thenReturn("sellOrder789");
 
         engine.manualExit(10L);
 
         verify(broker).cancelGttOrder("GTT456");
+        verify(broker).placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString());
+        verify(db).recordManualExitOrder(10L, "sellOrder789");
         verify(db).closePosition(10L, PositionStatus.CLOSED_MANUAL, null);
+        verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
+    }
+
+    @Test
+    @DisplayName("manualExit closes DB position even when market sell order fails")
+    void manualExit_sellOrderFails_stillClosesPosition() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString()))
+                .thenThrow(new BrokerOrderException("Insufficient holdings"));
+
+        engine.manualExit(10L);
+
+        verify(db).closePosition(10L, PositionStatus.CLOSED_MANUAL, null);
+        verify(db, never()).recordManualExitOrder(any(), any());
         verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
     }
 
