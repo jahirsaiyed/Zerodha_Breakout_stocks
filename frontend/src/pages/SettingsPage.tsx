@@ -22,6 +22,7 @@ export function SettingsPage() {
   const qc = useQueryClient()
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
+  const [telegramTestMsg, setTelegramTestMsg] = useState('')
   const [searchParams, setSearchParams] = useSearchParams()
   const [zerodhaMsg, setZerodhaMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -99,6 +100,18 @@ export function SettingsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['config'] })
       setZerodhaMsg({ type: 'success', text: 'Zerodha disconnected.' })
+    },
+  })
+
+  const telegramTest = useMutation({
+    mutationFn: () => api.post('/users/me/telegram/test'),
+    onSuccess: () => {
+      setTelegramTestMsg('Test message sent!')
+      setTimeout(() => setTelegramTestMsg(''), 4000)
+    },
+    onError: () => {
+      setTelegramTestMsg('Failed to send — check your Chat ID and bot token.')
+      setTimeout(() => setTelegramTestMsg(''), 4000)
     },
   })
 
@@ -193,7 +206,24 @@ export function SettingsPage() {
 
         {/* Telegram */}
         <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <h2 className="mb-5 text-sm font-semibold text-gray-900">Telegram Notifications</h2>
+          <div className="mb-5 flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-gray-900">Telegram Notifications</h2>
+            {form.telegramChatId && (
+              <button type="button" onClick={() => telegramTest.mutate()}
+                disabled={telegramTest.isPending}
+                className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-500
+                           hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-60">
+                {telegramTest.isPending ? 'Sending…' : 'Send Test'}
+              </button>
+            )}
+          </div>
+          {telegramTestMsg && (
+            <p className={`mb-4 rounded-md px-3 py-2 text-sm ${
+              telegramTestMsg.startsWith('Test')
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-red-50 text-red-700'
+            }`}>{telegramTestMsg}</p>
+          )}
           <Field label="Chat ID" hint="Your Telegram chat ID for trade alerts">
             <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
               placeholder="e.g. 123456789" className={inputCls} />

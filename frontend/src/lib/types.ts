@@ -49,3 +49,24 @@ export interface AdminUser {
   active: boolean
   createdAt: string
 }
+
+export interface LivePosition {
+  id: number
+  symbol: string
+  quantity: number
+  avgEntryPrice: number | null
+  signalStopLoss: number | null
+  signalTarget: number | null
+  status: string
+  ltp: number | null
+  unrealisedPnl: number | null
+}
+
+export interface HealthResponse {
+  instrumentCacheSize: number
+  instrumentCacheLoaded: boolean
+  lastSyncAt: string | null
+  lastSyncAdded: number
+  lastSyncModified: number
+  zerodhaStatuses: { userId: number; email: string; connected: boolean }[]
+}
