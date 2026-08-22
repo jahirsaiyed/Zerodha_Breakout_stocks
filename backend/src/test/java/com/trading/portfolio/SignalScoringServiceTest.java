@@ -45,11 +45,14 @@ class SignalScoringServiceTest {
     }
 
     @Test
-    @DisplayName("signal with no quote is skipped")
-    void rank_noQuote_signalSkipped() {
+    @DisplayName("signal with no quote is included with proximity=1.0 (RRR-only ranking)")
+    void rank_noQuote_signalIncludedWithMaxProximity() {
         Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
+        // No live quote available — signal should still be ranked using proximity=1.0
         var result = scoringService.rank(List.of(s), Map.of());
-        assertThat(result).isEmpty();
+        assertThat(result).hasSize(1);
+        // Single signal → rrNorm=1.0, proximity=1.0 → score = 0.6*1.0 + 0.4*1.0 = 1.0
+        assertThat(result.get(0).score()).isEqualByComparingTo(BigDecimal.ONE);
     }
 
     @Test

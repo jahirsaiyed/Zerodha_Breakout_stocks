@@ -234,8 +234,8 @@ class PortfolioEngineTest {
     }
 
     @Test
-    @DisplayName("manualExit closes DB position even when market sell order fails")
-    void manualExit_sellOrderFails_stillClosesPosition() {
+    @DisplayName("manualExit propagates exception and leaves DB position ACTIVE when sell order fails")
+    void manualExit_sellOrderFails_propagatesExceptionPositionStaysActive() {
         Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
         Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
 
@@ -245,11 +245,14 @@ class PortfolioEngineTest {
         when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString()))
                 .thenThrow(new BrokerOrderException("Insufficient holdings"));
 
-        engine.manualExit(10L);
+        // Broker failure must propagate — DB position must NOT be closed
+        assertThatThrownBy(() -> engine.manualExit(10L))
+                .isInstanceOf(BrokerOrderException.class)
+                .hasMessageContaining("Insufficient holdings");
 
-        verify(db).closePosition(10L, PositionStatus.CLOSED_MANUAL, null);
+        verify(db, never()).closePosition(any(), any(), any());
         verify(db, never()).recordManualExitOrder(any(), any());
-        verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
+        verify(events, never()).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
     }
 
     @Test

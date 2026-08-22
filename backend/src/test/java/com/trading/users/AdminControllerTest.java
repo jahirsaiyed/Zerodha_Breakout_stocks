@@ -2,6 +2,7 @@ package com.trading.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.auth.JwtUtil;
+import com.trading.portfolio.PortfolioEngine;
 import com.trading.signals.InstrumentCacheService;
 import com.trading.signals.SignalSyncLog;
 import com.trading.signals.SignalSyncLogRepository;
@@ -40,6 +41,7 @@ class AdminControllerTest {
     @MockBean UserConfigRepository userConfigRepository;
     @MockBean SignalSyncLogRepository syncLogRepository;
     @MockBean InstrumentCacheService instrumentCacheService;
+    @MockBean PortfolioEngine portfolioEngine;
     @MockBean JwtUtil jwtUtil;
 
     // ── GET /admin/health ─────────────────────────────────────────────────────
