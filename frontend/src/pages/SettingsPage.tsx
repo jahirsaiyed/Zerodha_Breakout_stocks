@@ -302,6 +302,7 @@ export function SettingsPage() {
             {changePassword.isPending ? 'Changing…' : 'Change Password'}
           </button>
         </div>
+      </form>
     </div>
   )
 }

@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { AuthProvider } from './contexts/AuthContext'
@@ -9,11 +10,14 @@ import { LoginPage } from './pages/LoginPage'
 import { DashboardPage } from './pages/DashboardPage'
 import { PositionsPage } from './pages/PositionsPage'
 import { SignalsPage } from './pages/SignalsPage'
-import { HistoryPage } from './pages/HistoryPage'
 import { OrdersPage } from './pages/OrdersPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AdminPage } from './pages/AdminPage'
 import { ZerodhaCallbackPage } from './pages/ZerodhaCallbackPage'
+
+// Lazy-load HistoryPage: it imports Recharts (~200KB gzipped) which would otherwise
+// bloat the initial bundle for users who never visit the History tab.
+const HistoryPage = lazy(() => import('./pages/HistoryPage').then(m => ({ default: m.HistoryPage })))
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
@@ -30,7 +34,7 @@ function AppRoutes() {
             <Route path="/"          element={<DashboardPage />} />
             <Route path="/positions" element={<PositionsPage />} />
             <Route path="/signals"   element={<SignalsPage />} />
-            <Route path="/history"   element={<HistoryPage />} />
+            <Route path="/history"   element={<Suspense fallback={<div className="p-8 text-sm text-gray-400">Loading…</div>}><HistoryPage /></Suspense>} />
             <Route path="/orders"    element={<OrdersPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
             <Route element={<AdminRoute />}>
