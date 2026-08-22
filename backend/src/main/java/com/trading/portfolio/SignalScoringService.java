@@ -41,7 +41,10 @@ public class SignalScoringService {
         for (Signal signal : candidates) {
             BigDecimal ltp = quotes.get(signal.getSymbol());
             if (ltp == null) {
-                log.debug("No quote for {} — skipping", signal.getSymbol());
+                // No live quote available (e.g. free Kite Connect plan) — assume price is at
+                // entry and assign maximum proximity so ranking falls back to RRR alone.
+                log.debug("No quote for {} — using proximity=1.0 (RRR-only ranking)", signal.getSymbol());
+                valid.add(new Candidate(signal, signal.getEntryPrice(), BigDecimal.ONE));
                 continue;
             }
             // Disqualify: price already at or below stop-loss
@@ -50,7 +53,12 @@ public class SignalScoringService {
                 continue;
             }
 
-            BigDecimal risk      = signal.getEntryPrice().subtract(signal.getStopLoss(), MC);
+            BigDecimal risk = signal.getEntryPrice().subtract(signal.getStopLoss(), MC);
+            if (risk.compareTo(BigDecimal.ZERO) <= 0) {
+                log.debug("Signal {} disqualified: entry={} ≤ sl={} (zero or negative risk)",
+                        signal.getId(), signal.getEntryPrice(), signal.getStopLoss());
+                continue;
+            }
             BigDecimal deviation = ltp.subtract(signal.getEntryPrice(), MC);
             BigDecimal proximity = BigDecimal.ONE.subtract(deviation.divide(risk, MC), MC);
             // Cap at 1.0 (price below entry is best case — no need to distinguish further)

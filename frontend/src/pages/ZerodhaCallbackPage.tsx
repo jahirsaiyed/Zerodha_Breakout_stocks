@@ -12,8 +12,22 @@ export function ZerodhaCallbackPage() {
   const navigate = useNavigate()
 
   useEffect(() => {
-    // If this page is ever reached, forward all query params to settings
-    const zerodha = params.get('zerodha') ?? params.get('status') ?? 'error'
+    const requestToken = params.get('request_token')
+    const status = params.get('status')
+
+    if (requestToken && status) {
+      // Raw Zerodha OAuth callback — forward to the backend to exchange the token
+      window.location.replace(
+        `/api/zerodha/callback?request_token=${encodeURIComponent(requestToken)}&status=${encodeURIComponent(status)}`
+      )
+      return
+    }
+
+    // Already-processed result forwarded from the backend (e.g. zerodha=connected).
+    // Allow-list valid values to prevent open-redirect via a crafted query string.
+    const raw = params.get('zerodha')
+    const VALID_STATES = new Set(['connected', 'error', 'disconnected'])
+    const zerodha = raw && VALID_STATES.has(raw) ? raw : 'error'
     navigate(`/settings?zerodha=${zerodha}`, { replace: true })
   }, [navigate, params])
 

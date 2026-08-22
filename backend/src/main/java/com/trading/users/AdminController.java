@@ -1,6 +1,7 @@
 package com.trading.users;
 
 import com.trading.common.ApiResponse;
+import com.trading.portfolio.PortfolioEngine;
 import com.trading.signals.InstrumentCacheService;
 import com.trading.signals.SignalSyncLog;
 import com.trading.signals.SignalSyncLogRepository;
@@ -31,6 +32,7 @@ public class AdminController {
     private final UserConfigRepository userConfigRepository;
     private final SignalSyncLogRepository syncLogRepository;
     private final InstrumentCacheService instrumentCacheService;
+    private final PortfolioEngine portfolioEngine;
 
     @GetMapping("/users")
     @Operation(summary = "List all users")
@@ -78,5 +80,26 @@ public class AdminController {
         );
 
         return ResponseEntity.ok(ApiResponse.success(health));
+    }
+
+    @PostMapping("/portfolio/run-loop")
+    @Operation(summary = "Manually trigger the core portfolio loop (places new entry orders)")
+    public ResponseEntity<ApiResponse<Void>> runLoop() {
+        portfolioEngine.runCoreLoop();
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/portfolio/check-fills")
+    @Operation(summary = "Manually trigger order fill detection")
+    public ResponseEntity<ApiResponse<Void>> checkFills() {
+        portfolioEngine.checkOrderFills();
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/portfolio/reconcile-gtt")
+    @Operation(summary = "Manually trigger GTT exit reconciliation")
+    public ResponseEntity<ApiResponse<Void>> reconcileGtt() {
+        portfolioEngine.reconcileGttExits();
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 }

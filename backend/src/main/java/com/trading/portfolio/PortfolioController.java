@@ -130,10 +130,10 @@ public class PortfolioController {
             List<String> symbols = positions.stream().map(Position::getSymbol).toList();
             return adapter.getQuotes(symbols);
         } catch (BrokerTokenException e) {
-            log.debug("Live quotes unavailable for user {} — not connected: {}", userId, e.getMessage());
+            log.debug("Live quotes unavailable for user {} (token/permission issue): {}", userId, e.getMessage());
             return Map.of();
         } catch (Exception e) {
-            log.warn("Live quotes fetch failed for user {}: {}", userId, e.getMessage());
+            log.debug("Live quotes unavailable for user {} ({}): {}", userId, e.getClass().getSimpleName(), e.getMessage());
             return Map.of();
         }
     }

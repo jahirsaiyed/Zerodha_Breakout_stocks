@@ -67,9 +67,15 @@ public class PortfolioEngine {
             return;
         }
 
-        // Symbols already held (DB + Zerodha holdings) to avoid duplicates
+        // Symbols already held (DB + Zerodha holdings) to avoid duplicates.
+        // If holdings fetch fails (network error), proceed conservatively with DB symbols only.
         Set<String> occupiedSymbols = db.getOccupiedSymbols(userId);
-        broker.getHoldings().forEach(h -> occupiedSymbols.add(h.symbol()));
+        try {
+            broker.getHoldings().forEach(h -> occupiedSymbols.add(h.symbol()));
+        } catch (BrokerNetworkException e) {
+            log.warn("Core loop — could not fetch Zerodha holdings for user {}: {}, proceeding with DB symbols only",
+                    userId, e.getMessage());
+        }
 
         List<Signal> candidates = db.getCandidateSignals(userId, occupiedSymbols);
         if (candidates.isEmpty()) {
@@ -78,9 +84,24 @@ public class PortfolioEngine {
         }
 
         List<String> symbols = candidates.stream().map(Signal::getSymbol).distinct().toList();
-        Map<String, BigDecimal> quotes = broker.getQuotes(symbols);
+        Map<String, BigDecimal> quotes;
+        try {
+            quotes = broker.getQuotes(symbols);
+        } catch (BrokerTokenException e) {
+            log.warn("Core loop — user {} quotes unavailable (permission denied), ranking by RRR only", userId);
+            quotes = Map.of();
+        } catch (BrokerNetworkException e) {
+            log.warn("Core loop — user {} quotes fetch failed: {}, ranking by RRR only", userId, e.getMessage());
+            quotes = Map.of();
+        }
         List<ScoredSignal> ranked = scoringService.rank(candidates, quotes);
-        BigDecimal margin = broker.getAvailableMargin();
+        BigDecimal margin;
+        try {
+            margin = broker.getAvailableMargin();
+        } catch (BrokerNetworkException e) {
+            log.warn("Core loop — could not fetch margin for user {}: {}, skipping order placement", userId, e.getMessage());
+            return;
+        }
 
         int placed = 0;
         for (ScoredSignal ss : ranked) {
@@ -88,8 +109,10 @@ public class PortfolioEngine {
             try {
                 placeEntryOrder(config, broker, ss.signal(), margin);
                 placed++;
-            } catch (BrokerOrderException e) {
-                log.warn("Core loop — order rejected for signal {} user {}: {}",
+            } catch (BrokerException e) {
+                // Catch all broker errors (order rejection, network, config) per signal so a
+                // failure on one signal does not abort placement of the remaining ranked signals.
+                log.warn("Core loop — order failed for signal {} user {}: {}",
                         ss.signal().getId(), userId, e.getMessage());
             }
         }
@@ -122,7 +145,9 @@ public class PortfolioEngine {
             events.publishEvent(new OrderPlacedEvent(positionId, signal.getSymbol(), orderId));
             log.info("Entry order placed: pos={} order={} symbol={} qty={} price={}",
                     positionId, orderId, signal.getSymbol(), qty, signal.getEntryPrice());
-        } catch (BrokerOrderException e) {
+        } catch (BrokerException e) {
+            // Any broker failure (order rejection OR network error) must roll back the pending position.
+            // Without this, a failed placeLimitOrder leaves a stranded PENDING_ENTRY row in the DB.
             db.cancelPosition(positionId);
             throw e;
         }
@@ -315,18 +340,13 @@ public class PortfolioEngine {
             catch (Exception e) { log.warn("Could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
         }
 
-        // Place CNC market sell order to actually exit the position
+        // Place CNC market sell order to actually exit the position.
+        // Do NOT mark the DB position closed if the broker call fails — the stock is still held.
         String tag = "pos_" + positionId + "_manual";
-        String sellOrderId;
-        try {
-            sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
-            db.recordManualExitOrder(positionId, sellOrderId);
-            log.info("Market sell placed: pos={} symbol={} qty={} order={}",
-                    positionId, pos.getSymbol(), pos.getQuantity(), sellOrderId);
-        } catch (BrokerOrderException e) {
-            log.error("Market sell failed for pos={} symbol={}: {} — position closed in DB anyway",
-                    positionId, pos.getSymbol(), e.getMessage());
-        }
+        String sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
+        db.recordManualExitOrder(positionId, sellOrderId);
+        log.info("Market sell placed: pos={} symbol={} qty={} order={}",
+                positionId, pos.getSymbol(), pos.getQuantity(), sellOrderId);
 
         db.closePosition(positionId, PositionStatus.CLOSED_MANUAL, null);
         events.publishEvent(new PositionClosedEvent(positionId, pos.getSymbol(),

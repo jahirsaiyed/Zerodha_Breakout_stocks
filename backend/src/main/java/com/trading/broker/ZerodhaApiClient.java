@@ -307,9 +307,19 @@ public class ZerodhaApiClient {
         return switch (errorType) {
             case "TokenException", "PermissionException" -> new BrokerTokenException(message);
             case "OrderException", "InputException"      -> new BrokerOrderException(message);
-            default                                       -> new BrokerNetworkException(
-                    "Zerodha [" + errorType + "]: " + message);
+            case "NetworkException" -> isPermanentNetworkError(message)
+                    // "No static IP set for the app" and similar permanent config errors must not
+                    // be retried — treat them as order-level (non-retryable) failures.
+                    ? new BrokerOrderException("Zerodha config error [" + errorType + "]: " + message)
+                    : new BrokerNetworkException("Zerodha [" + errorType + "]: " + message);
+            default -> new BrokerNetworkException("Zerodha [" + errorType + "]: " + message);
         };
+    }
+
+    private boolean isPermanentNetworkError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase();
+        return lower.contains("no static ip") || lower.contains("static ip not set");
     }
 
     // ── Retry ────────────────────────────────────────────────────────────────
