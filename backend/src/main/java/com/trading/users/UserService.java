@@ -68,6 +68,9 @@ public class UserService {
         if (req.zerodhaApiKey() != null) cfg.setZerodhaApiKey(req.zerodhaApiKey());
         if (req.zerodhaApiSecret() != null)
             cfg.setZerodhaApiSecret(encryptionUtil.encrypt(req.zerodhaApiSecret()));
+        if (req.zerodhaTotpSecret() != null)
+            cfg.setZerodhaTotpSecret(req.zerodhaTotpSecret().isBlank() ? null
+                    : encryptionUtil.encrypt(req.zerodhaTotpSecret()));
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
@@ -84,6 +87,7 @@ public class UserService {
         return new UserConfigResponse(
                 cfg.getMaxPositions(), cfg.getPositionSizingMethod().name(),
                 cfg.getPositionSizingValue(), cfg.getOrderExpiryDays(),
-                cfg.getTelegramChatId(), cfg.getZerodhaConnected(), cfg.getZerodhaApiKey());
+                cfg.getTelegramChatId(), cfg.getZerodhaConnected(), cfg.getZerodhaApiKey(),
+                cfg.getZerodhaTotpSecret() != null && !cfg.getZerodhaTotpSecret().isBlank());
     }
 }

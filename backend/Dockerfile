@@ -32,6 +32,6 @@ COPY --from=build /app/target/*.jar app.jar
 # Switch to non-root user
 USER appuser
 
-EXPOSE 8080
+EXPOSE 9006
 
 ENTRYPOINT ["java", "-jar", "app.jar"]

@@ -8,11 +8,19 @@ import org.springframework.stereotype.Component;
 public class ZerodhaProperties {
 
     private String baseUrl = "https://api.kite.trade";
+    private String loginBaseUrl = "https://kite.zerodha.com/connect/login?v=3&api_key=";
+    private String frontendUrl = "http://localhost:5173";
     private int connectTimeoutMs = 10_000;
     private int readTimeoutMs = 30_000;
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }
+
+    public String getLoginBaseUrl() { return loginBaseUrl; }
+    public void setLoginBaseUrl(String loginBaseUrl) { this.loginBaseUrl = loginBaseUrl; }
+
+    public String getFrontendUrl() { return frontendUrl; }
+    public void setFrontendUrl(String frontendUrl) { this.frontendUrl = frontendUrl; }
 
     public int getConnectTimeoutMs() { return connectTimeoutMs; }
     public void setConnectTimeoutMs(int connectTimeoutMs) { this.connectTimeoutMs = connectTimeoutMs; }

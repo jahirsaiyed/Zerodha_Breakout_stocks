@@ -17,6 +17,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.lenient;
 
 @ExtendWith(MockitoExtension.class)
 class SignalServiceTest {
@@ -24,12 +25,16 @@ class SignalServiceTest {
     @Mock SignalRepository signalRepository;
     @Mock PositionRepository positionRepository;
     @Mock SignalSyncLogRepository syncLogRepository;
+    @Mock InstrumentCacheService instrumentCacheService;
 
     private SignalService signalService;
 
     @BeforeEach
     void setUp() {
-        signalService = new SignalService(signalRepository, positionRepository, syncLogRepository);
+        // Instrument cache returns true by default (fail-open — all symbols valid)
+        lenient().when(instrumentCacheService.isValidNseSymbol(any())).thenReturn(true);
+        signalService = new SignalService(signalRepository, positionRepository,
+                syncLogRepository, instrumentCacheService);
     }
 
     // --- create ---

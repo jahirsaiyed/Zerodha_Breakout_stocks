@@ -11,5 +11,6 @@ public record UpdateConfigRequest(
     @Min(1) @Max(30) Integer orderExpiryDays,
     String telegramChatId,
     String zerodhaApiKey,
-    String zerodhaApiSecret
+    String zerodhaApiSecret,
+    String zerodhaTotpSecret
 ) {}

@@ -20,6 +20,17 @@ public class BrokerAdapterFactory {
     private final ZerodhaProperties props;
     private final EncryptionUtil encryptionUtil;
 
+    /**
+     * Exchanges a Zerodha request_token for an access_token using the user's API key and secret.
+     * Used by the OAuth callback flow — the resulting token is then stored encrypted.
+     */
+    public String exchangeToken(String apiKey, String apiSecret, String requestToken) {
+        ZerodhaApiClient client = new ZerodhaApiClient(
+                apiKey, "", props.getBaseUrl(),
+                props.getConnectTimeoutMs(), props.getReadTimeoutMs());
+        return client.refreshAccessToken(apiKey, apiSecret, requestToken);
+    }
+
     public BrokerAdapter forUser(UserConfig config) {
         String apiKey = config.getZerodhaApiKey();
         String encryptedToken = config.getZerodhaAccessToken();
