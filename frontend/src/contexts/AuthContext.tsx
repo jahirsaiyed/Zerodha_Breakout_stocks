@@ -7,7 +7,7 @@ import api from '../lib/api'
 interface User { id: number; name: string; email: string; role: string; active: boolean }
 interface AuthCtx { user: User | null; isLoading: boolean; logout: () => Promise<void> }
 
-const AuthContext = createContext<AuthCtx>({ user: null, isLoading: true, logout: () => Promise.resolve() })
+export const AuthContext = createContext<AuthCtx>({ user: null, isLoading: true, logout: () => Promise.resolve() })
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient()
