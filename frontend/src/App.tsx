@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage'
 import { PositionsPage } from './pages/PositionsPage'
 import { SignalsPage } from './pages/SignalsPage'
 import { HistoryPage } from './pages/HistoryPage'
+import { OrdersPage } from './pages/OrdersPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AdminPage } from './pages/AdminPage'
 import { ZerodhaCallbackPage } from './pages/ZerodhaCallbackPage'
@@ -28,6 +29,7 @@ function AppRoutes() {
             <Route path="/positions" element={<PositionsPage />} />
             <Route path="/signals"   element={<SignalsPage />} />
             <Route path="/history"   element={<HistoryPage />} />
+            <Route path="/orders"    element={<OrdersPage />} />
             <Route path="/settings"  element={<SettingsPage />} />
             <Route path="/admin"     element={<AdminPage />} />
             <Route path="*"          element={<Navigate to="/" replace />} />

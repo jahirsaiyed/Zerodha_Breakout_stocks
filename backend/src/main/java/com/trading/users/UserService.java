@@ -74,6 +74,16 @@ public class UserService {
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
+    @Transactional
+    public void changePassword(String email, String currentPassword, String newPassword) {
+        User user = findByEmail(email);
+        if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
+            throw new IllegalArgumentException("Current password is incorrect");
+        }
+        user.setPasswordHash(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+    }
+
     private User findByEmail(String email) {
         return userRepository.findByEmail(email)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + email));

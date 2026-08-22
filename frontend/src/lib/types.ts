@@ -62,6 +62,20 @@ export interface LivePosition {
   unrealisedPnl: number | null
 }
 
+export interface Order {
+  id: number
+  symbol: string
+  type: 'ENTRY' | 'EXIT_TARGET' | 'EXIT_SL'
+  orderKind: 'LIMIT' | 'GTT' | string
+  quantity: number
+  price: number | null
+  status: 'PENDING' | 'FILLED' | 'CANCELLED' | 'REJECTED'
+  zerodhaOrderId: string | null
+  positionId: number | null
+  placedAt: string
+  updatedAt: string
+}
+
 export interface HealthResponse {
   instrumentCacheSize: number
   instrumentCacheLoaded: boolean

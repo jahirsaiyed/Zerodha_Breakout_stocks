@@ -23,6 +23,8 @@ export function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [error, setError] = useState('')
   const [telegramTestMsg, setTelegramTestMsg] = useState('')
+  const [pwForm, setPwForm] = useState({ current: '', next: '', confirm: '' })
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [zerodhaMsg, setZerodhaMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
 
@@ -102,6 +104,33 @@ export function SettingsPage() {
       setZerodhaMsg({ type: 'success', text: 'Zerodha disconnected.' })
     },
   })
+
+  const changePassword = useMutation({
+    mutationFn: () => api.post('/users/me/password', {
+      currentPassword: pwForm.current,
+      newPassword: pwForm.next,
+    }),
+    onSuccess: () => {
+      setPwMsg({ ok: true, text: 'Password changed successfully.' })
+      setPwForm({ current: '', next: '', confirm: '' })
+      setTimeout(() => setPwMsg(null), 4000)
+    },
+    onError: (e: any) => setPwMsg({ ok: false, text: e.response?.data?.error ?? 'Password change failed.' }),
+  })
+
+  const handlePasswordSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (pwForm.next !== pwForm.confirm) {
+      setPwMsg({ ok: false, text: 'New passwords do not match.' })
+      return
+    }
+    if (pwForm.next.length < 8) {
+      setPwMsg({ ok: false, text: 'New password must be at least 8 characters.' })
+      return
+    }
+    setPwMsg(null)
+    changePassword.mutate()
+  }
 
   const telegramTest = useMutation({
     mutationFn: () => api.post('/users/me/telegram/test'),
@@ -240,6 +269,39 @@ export function SettingsPage() {
           {error && <span className="text-sm text-red-600">{error}</span>}
         </div>
       </form>
+
+      {/* Change Password (separate form — not part of config save) */}
+      <form onSubmit={handlePasswordSubmit} className="mt-8 space-y-6 max-w-2xl">
+        <div className="rounded-xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-5 text-sm font-semibold text-gray-900">Change Password</h2>
+          {pwMsg && (
+            <p className={`mb-4 rounded-md px-3 py-2 text-sm ${pwMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>
+              {pwMsg.text}
+            </p>
+          )}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Current Password">
+              <input type="password" value={pwForm.current}
+                onChange={e => setPwForm(f => ({ ...f, current: e.target.value }))}
+                placeholder="Current password" className={inputCls} />
+            </Field>
+            <Field label="New Password">
+              <input type="password" value={pwForm.next}
+                onChange={e => setPwForm(f => ({ ...f, next: e.target.value }))}
+                placeholder="Min 8 characters" className={inputCls} />
+            </Field>
+            <Field label="Confirm New Password">
+              <input type="password" value={pwForm.confirm}
+                onChange={e => setPwForm(f => ({ ...f, confirm: e.target.value }))}
+                placeholder="Repeat new password" className={inputCls} />
+            </Field>
+          </div>
+          <button type="submit" disabled={changePassword.isPending}
+            className="mt-4 rounded-md bg-gray-800 px-5 py-2 text-sm font-medium text-white
+                       hover:bg-gray-900 disabled:opacity-60">
+            {changePassword.isPending ? 'Changing…' : 'Change Password'}
+          </button>
+        </div>
     </div>
   )
 }

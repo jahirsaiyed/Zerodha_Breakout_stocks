@@ -2,6 +2,7 @@ package com.trading.users;
 
 import com.trading.common.ApiResponse;
 import com.trading.notifications.NotificationService;
+import com.trading.users.dto.ChangePasswordRequest;
 import com.trading.users.dto.UpdateConfigRequest;
 import com.trading.users.dto.UserConfigResponse;
 import com.trading.users.dto.UserResponse;
@@ -42,6 +43,14 @@ public class UserController {
     public ResponseEntity<ApiResponse<UserConfigResponse>> updateMyConfig(
             Authentication auth, @RequestBody @Valid UpdateConfigRequest req) {
         return ResponseEntity.ok(ApiResponse.success(userService.updateConfig(auth.getName(), req)));
+    }
+
+    @PostMapping("/me/password")
+    @Operation(summary = "Change current user's password")
+    public ResponseEntity<ApiResponse<Void>> changePassword(
+            Authentication auth, @RequestBody @Valid ChangePasswordRequest req) {
+        userService.changePassword(auth.getName(), req.currentPassword(), req.newPassword());
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 
     @PostMapping("/me/telegram/test")
