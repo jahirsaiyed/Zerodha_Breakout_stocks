@@ -24,6 +24,7 @@ public class SignalService {
     private final SignalRepository signalRepository;
     private final PositionRepository positionRepository;
     private final SignalSyncLogRepository syncLogRepository;
+    private final InstrumentCacheService instrumentCacheService;
 
     @Transactional(readOnly = true)
     public List<SignalResponse> list(SignalStatus status) {
@@ -35,10 +36,14 @@ public class SignalService {
 
     @Transactional
     public SignalResponse create(CreateSignalRequest req) {
+        String symbol = req.symbol().toUpperCase().trim();
+        if (!instrumentCacheService.isValidNseSymbol(symbol)) {
+            throw new IllegalArgumentException("'" + symbol + "' is not a valid NSE equity symbol.");
+        }
         validatePrices(req.entryPrice(), req.stopLoss(), req.target());
         BigDecimal rrr = computeRiskReward(req.entryPrice(), req.stopLoss(), req.target());
         Signal signal = Signal.builder()
-                .symbol(req.symbol().toUpperCase())
+                .symbol(symbol)
                 .entryPrice(req.entryPrice())
                 .stopLoss(req.stopLoss())
                 .target(req.target())

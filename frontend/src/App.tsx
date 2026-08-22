@@ -10,6 +10,7 @@ import { SignalsPage } from './pages/SignalsPage'
 import { HistoryPage } from './pages/HistoryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { AdminPage } from './pages/AdminPage'
+import { ZerodhaCallbackPage } from './pages/ZerodhaCallbackPage'
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 60_000 } },
@@ -20,6 +21,7 @@ function AppRoutes() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/zerodha/callback" element={<ZerodhaCallbackPage />} />
         <Route element={<ProtectedRoute />}>
           <Route element={<Layout />}>
             <Route path="/"          element={<DashboardPage />} />

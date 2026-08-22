@@ -38,6 +38,7 @@ export interface UserConfig {
   telegramChatId: string | null
   zerodhaConnected: boolean
   zerodhaApiKey: string | null
+  hasTotpSecret: boolean
 }
 
 export interface AdminUser {
