@@ -115,20 +115,43 @@ public class ZerodhaApiClient {
         });
     }
 
-    // ── Order status ─────────────────────────────────────────────────────────
+    // ── Order detail ─────────────────────────────────────────────────────────
 
-    public BrokerOrderStatus getOrderStatus(String orderId) {
+    public BrokerOrderDetail getOrderDetail(String orderId) {
         return executeWithRetry(() -> {
             JsonNode data = get("/orders/" + orderId);
-            // data is an array; find the matching order
             if (data.isArray()) {
                 for (JsonNode order : data) {
                     if (orderId.equals(order.path("order_id").asText())) {
-                        return mapOrderStatus(order.path("status").asText());
+                        BrokerOrderStatus status = mapOrderStatus(order.path("status").asText());
+                        int filled = order.path("filled_quantity").asInt(0);
+                        BigDecimal avgPrice = new BigDecimal(
+                                order.path("average_price").asText("0"));
+                        return new BrokerOrderDetail(status, filled, avgPrice);
                     }
                 }
             }
-            return BrokerOrderStatus.UNKNOWN;
+            return new BrokerOrderDetail(BrokerOrderStatus.UNKNOWN, 0, BigDecimal.ZERO);
+        });
+    }
+
+    // ── GTT status ───────────────────────────────────────────────────────────
+
+    public GttStatusResult getGttStatus(String gttId) {
+        return executeWithRetry(() -> {
+            JsonNode data = get("/gtt/triggers/" + gttId);
+            String status = data.path("status").asText("");
+            if ("triggered".equalsIgnoreCase(status)) {
+                // orders[0] is the leg that fired
+                JsonNode orders = data.path("orders");
+                BigDecimal fillPrice = BigDecimal.ZERO;
+                if (orders.isArray() && orders.size() > 0) {
+                    fillPrice = new BigDecimal(
+                            orders.get(0).path("price").asText("0"));
+                }
+                return new GttStatusResult(true, fillPrice);
+            }
+            return GttStatusResult.active();
         });
     }
 

@@ -46,8 +46,13 @@ public class ZerodhaBrokerAdapter implements BrokerAdapter {
     }
 
     @Override
-    public BrokerOrderStatus getOrderStatus(String orderId) {
-        return apiClient.getOrderStatus(orderId);
+    public BrokerOrderDetail getOrderDetail(String orderId) {
+        return apiClient.getOrderDetail(orderId);
+    }
+
+    @Override
+    public GttStatusResult getGttStatus(String gttId) {
+        return apiClient.getGttStatus(gttId);
     }
 
     @Override

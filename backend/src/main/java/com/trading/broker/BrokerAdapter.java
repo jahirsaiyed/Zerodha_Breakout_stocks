@@ -35,8 +35,11 @@ public interface BrokerAdapter {
     /** Cancels a GTT trigger by trigger ID. */
     void cancelGttOrder(String gttId);
 
-    /** Returns the current status of a regular order. */
-    BrokerOrderStatus getOrderStatus(String orderId);
+    /** Returns full detail of a regular order (status, filled qty, avg price). */
+    BrokerOrderDetail getOrderDetail(String orderId);
+
+    /** Returns the GTT trigger status. */
+    GttStatusResult getGttStatus(String gttId);
 
     /** Returns all holdings (long positions) in the user's demat account. */
     List<Holding> getHoldings();

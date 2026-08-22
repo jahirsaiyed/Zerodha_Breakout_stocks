@@ -91,14 +91,28 @@ class ZerodhaBrokerAdapterTest {
         verify(apiClient).cancelGttOrder("gtt456");
     }
 
-    // ── getOrderStatus ────────────────────────────────────────────────────────
+    // ── getOrderDetail ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getOrderStatus returns COMPLETE when broker reports COMPLETE")
-    void getOrderStatus_returnsStatus() {
-        when(apiClient.getOrderStatus("order123")).thenReturn(BrokerOrderStatus.COMPLETE);
+    @DisplayName("getOrderDetail delegates and returns detail")
+    void getOrderDetail_returnsDetail() {
+        BrokerOrderDetail detail = new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 10, new BigDecimal("100"));
+        when(apiClient.getOrderDetail("order123")).thenReturn(detail);
 
-        assertThat(adapter.getOrderStatus("order123")).isEqualTo(BrokerOrderStatus.COMPLETE);
+        BrokerOrderDetail result = adapter.getOrderDetail("order123");
+        assertThat(result.status()).isEqualTo(BrokerOrderStatus.COMPLETE);
+        assertThat(result.filledQuantity()).isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("getGttStatus delegates and returns result")
+    void getGttStatus_returnsResult() {
+        GttStatusResult triggered = new GttStatusResult(true, new BigDecimal("90"));
+        when(apiClient.getGttStatus("gtt456")).thenReturn(triggered);
+
+        GttStatusResult result = adapter.getGttStatus("gtt456");
+        assertThat(result.triggered()).isTrue();
+        assertThat(result.filledPrice()).isEqualByComparingTo("90");
     }
 
     // ── getHoldings ───────────────────────────────────────────────────────────

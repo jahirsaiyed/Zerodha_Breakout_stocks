@@ -34,6 +34,11 @@ cors:
 cookie:
   secure: ${COOKIE_SECURE:false}
 
+portfolio:
+  scoring:
+    proximity-weight: ${SCORING_PROXIMITY_WEIGHT:0.6}
+    risk-reward-weight: ${SCORING_RISK_REWARD_WEIGHT:0.4}
+
 zerodha:
   base-url: ${ZERODHA_BASE_URL:https://api.kite.trade}
   connect-timeout-ms: ${ZERODHA_CONNECT_TIMEOUT_MS:10000}
