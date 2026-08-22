@@ -1,6 +1,10 @@
 package com.trading.portfolio;
 
 import com.trading.portfolio.dto.PositionResponse;
+import com.trading.signals.Order;
+import com.trading.signals.OrderKind;
+import com.trading.signals.OrderStatus;
+import com.trading.signals.OrderType;
 import com.trading.signals.Position;
 import com.trading.signals.PositionStatus;
 import com.trading.users.User;
@@ -105,6 +109,34 @@ class PortfolioControllerTest {
 
         mockMvc.perform(post("/api/portfolio/positions/99/exit"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("GET /api/portfolio/orders returns orders for user")
+    void getOrders_authenticated_returnsOrders() throws Exception {
+        User user = User.builder().id(1L).email("user@example.com").name("Test").passwordHash("x").build();
+        Order order = Order.builder()
+                .id(1L).user(user).symbol("RELIANCE")
+                .type(OrderType.ENTRY).orderKind(OrderKind.LIMIT)
+                .quantity(5).status(OrderStatus.FILLED)
+                .zerodhaOrderId("ZOrder123").build();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(orderRepository.findByUserId(1L)).thenReturn(List.of(order));
+
+        mockMvc.perform(get("/api/portfolio/orders"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].symbol").value("RELIANCE"))
+                .andExpect(jsonPath("$[0].type").value("ENTRY"))
+                .andExpect(jsonPath("$[0].zerodhaOrderId").value("ZOrder123"));
+    }
+
+    @Test
+    @DisplayName("GET /api/portfolio/orders requires authentication")
+    void getOrders_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(get("/api/portfolio/orders"))
+                .andExpect(status().isForbidden());
     }
 
     private Position buildPosition() {
