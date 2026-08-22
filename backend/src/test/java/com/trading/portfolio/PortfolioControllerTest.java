@@ -35,6 +35,7 @@ class PortfolioControllerTest {
     @MockBean PortfolioDbService db;
     @MockBean PortfolioEngine engine;
     @MockBean com.trading.broker.BrokerAdapterFactory brokerAdapterFactory;
+    @MockBean com.trading.signals.OrderRepository orderRepository;
     @MockBean com.trading.auth.JwtUtil jwtUtil;
 
     @Test

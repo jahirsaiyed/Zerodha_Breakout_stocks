@@ -4,7 +4,10 @@ import com.trading.broker.BrokerAdapter;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
 import com.trading.portfolio.dto.LivePositionResponse;
+import com.trading.portfolio.dto.OrderResponse;
 import com.trading.portfolio.dto.PositionResponse;
+import com.trading.signals.Order;
+import com.trading.signals.OrderRepository;
 import com.trading.signals.Position;
 import com.trading.signals.PositionStatus;
 import com.trading.users.UserConfig;
@@ -16,6 +19,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +33,7 @@ public class PortfolioController {
     private final PortfolioDbService db;
     private final PortfolioEngine engine;
     private final BrokerAdapterFactory brokerAdapterFactory;
+    private final OrderRepository orderRepository;
 
     /**
      * GET /api/portfolio/positions
@@ -97,6 +102,19 @@ public class PortfolioController {
 
         return active.stream()
                 .map(pos -> LivePositionResponse.of(pos, quotes.get(pos.getSymbol())))
+                .toList();
+    }
+
+    /**
+     * GET /api/portfolio/orders
+     * Returns all orders for the authenticated user, sorted newest first.
+     */
+    @GetMapping("/orders")
+    public List<OrderResponse> getOrders(@AuthenticationPrincipal UserDetails principal) {
+        Long userId = resolveUserId(principal);
+        return orderRepository.findByUserId(userId).stream()
+                .sorted(Comparator.comparing(Order::getPlacedAt).reversed())
+                .map(OrderResponse::from)
                 .toList();
     }
 
