@@ -1,6 +1,7 @@
 package com.trading.users;
 
 import com.trading.common.ApiResponse;
+import com.trading.notifications.NotificationService;
 import com.trading.users.dto.UpdateConfigRequest;
 import com.trading.users.dto.UserConfigResponse;
 import com.trading.users.dto.UserResponse;
@@ -22,6 +23,7 @@ import static com.trading.config.OpenApiConfig.COOKIE_AUTH;
 @SecurityRequirement(name = COOKIE_AUTH)
 public class UserController {
     private final UserService userService;
+    private final NotificationService notificationService;
 
     @GetMapping("/me")
     @Operation(summary = "Get current user")
@@ -40,5 +42,14 @@ public class UserController {
     public ResponseEntity<ApiResponse<UserConfigResponse>> updateMyConfig(
             Authentication auth, @RequestBody @Valid UpdateConfigRequest req) {
         return ResponseEntity.ok(ApiResponse.success(userService.updateConfig(auth.getName(), req)));
+    }
+
+    @PostMapping("/me/telegram/test")
+    @Operation(summary = "Send a test Telegram message to the current user")
+    public ResponseEntity<ApiResponse<Void>> testTelegram(Authentication auth) {
+        Long userId = userService.getUserByEmail(auth.getName()).id();
+        notificationService.notifyUser(userId,
+                "Test message from Zerodha Breakout — your Telegram notifications are working.");
+        return ResponseEntity.ok(ApiResponse.success(null));
     }
 }

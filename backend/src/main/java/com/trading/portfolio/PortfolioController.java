@@ -1,16 +1,26 @@
 package com.trading.portfolio;
 
+import com.trading.broker.BrokerAdapter;
+import com.trading.broker.BrokerAdapterFactory;
+import com.trading.broker.BrokerTokenException;
+import com.trading.portfolio.dto.LivePositionResponse;
 import com.trading.portfolio.dto.PositionResponse;
 import com.trading.signals.Position;
 import com.trading.signals.PositionStatus;
+import com.trading.users.UserConfig;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
+import java.math.BigDecimal;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
+@Slf4j
 @RestController
 @RequestMapping("/api/portfolio")
 @RequiredArgsConstructor
@@ -18,6 +28,7 @@ public class PortfolioController {
 
     private final PortfolioDbService db;
     private final PortfolioEngine engine;
+    private final BrokerAdapterFactory brokerAdapterFactory;
 
     /**
      * GET /api/portfolio/positions
@@ -65,6 +76,44 @@ public class PortfolioController {
                 .orElseThrow();
 
         return ResponseEntity.ok(PositionResponse.from(updated));
+    }
+
+    /**
+     * GET /api/portfolio/positions/live
+     * Returns ACTIVE positions enriched with live LTP and unrealised P&L.
+     * Falls back gracefully (ltp = null) when Zerodha is not connected.
+     */
+    @GetMapping("/positions/live")
+    public List<LivePositionResponse> getLivePositions(
+            @AuthenticationPrincipal UserDetails principal) {
+
+        Long userId = resolveUserId(principal);
+        List<Position> active = db.getPositionsByStatus(userId, PositionStatus.ACTIVE);
+
+        if (active.isEmpty()) return List.of();
+
+        // Try to fetch live quotes; fall back to null LTP if not connected
+        Map<String, BigDecimal> quotes = fetchQuotes(userId, active);
+
+        return active.stream()
+                .map(pos -> LivePositionResponse.of(pos, quotes.get(pos.getSymbol())))
+                .toList();
+    }
+
+    private Map<String, BigDecimal> fetchQuotes(Long userId, List<Position> positions) {
+        Optional<UserConfig> configOpt = db.getUserConfigByUserId(userId);
+        if (configOpt.isEmpty()) return Map.of();
+        try {
+            BrokerAdapter adapter = brokerAdapterFactory.forUser(configOpt.get());
+            List<String> symbols = positions.stream().map(Position::getSymbol).toList();
+            return adapter.getQuotes(symbols);
+        } catch (BrokerTokenException e) {
+            log.debug("Live quotes unavailable for user {} — not connected: {}", userId, e.getMessage());
+            return Map.of();
+        } catch (Exception e) {
+            log.warn("Live quotes fetch failed for user {}: {}", userId, e.getMessage());
+            return Map.of();
+        }
     }
 
     private Long resolveUserId(UserDetails principal) {

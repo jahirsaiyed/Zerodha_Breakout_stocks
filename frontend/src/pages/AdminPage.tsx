@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navigate } from 'react-router-dom'
 import api from '../lib/api'
-import type { AdminUser } from '../lib/types'
+import type { AdminUser, HealthResponse } from '../lib/types'
 import { Badge } from '../components/Badge'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -19,6 +19,12 @@ export function AdminPage() {
   const { data: users = [], isLoading } = useQuery<AdminUser[]>({
     queryKey: ['admin-users'],
     queryFn: () => api.get('/admin/users').then(r => r.data.data),
+  })
+
+  const { data: health } = useQuery<HealthResponse>({
+    queryKey: ['admin-health'],
+    queryFn: () => api.get('/admin/health').then(r => r.data.data),
+    refetchInterval: 60_000,
   })
 
   const toggleActive = useMutation({
@@ -45,6 +51,57 @@ export function AdminPage() {
 
   return (
     <div className="p-8">
+      {/* System Health */}
+      {health && (
+        <div className="mb-8 rounded-xl border border-gray-200 bg-white p-6">
+          <h2 className="mb-4 text-sm font-semibold text-gray-950">System Health</h2>
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+            <div>
+              <p className="text-xs text-gray-500">Instrument Cache</p>
+              <p className="mt-1 text-base font-semibold text-gray-900">
+                {health.instrumentCacheLoaded
+                  ? health.instrumentCacheSize.toLocaleString() + ' symbols'
+                  : 'Not loaded'}
+              </p>
+              <span className={`mt-0.5 inline-block text-xs ${health.instrumentCacheLoaded ? 'text-emerald-600' : 'text-red-500'}`}>
+                {health.instrumentCacheLoaded ? 'Loaded' : 'Missing'}
+              </span>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Last Sheet Sync</p>
+              <p className="mt-1 text-base font-semibold text-gray-900">
+                {health.lastSyncAt
+                  ? new Date(health.lastSyncAt).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })
+                  : 'Never'}
+              </p>
+              {health.lastSyncAt && (
+                <p className="mt-0.5 text-xs text-gray-400">
+                  +{health.lastSyncAdded} / ~{health.lastSyncModified}
+                </p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">Zerodha Connected</p>
+              <p className="mt-1 text-base font-semibold text-gray-900">
+                {health.zerodhaStatuses.filter(s => s.connected).length} / {health.zerodhaStatuses.length}
+              </p>
+              <p className="mt-0.5 text-xs text-gray-400">users connected</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500">User Statuses</p>
+              <div className="mt-1 space-y-1">
+                {health.zerodhaStatuses.map(s => (
+                  <div key={s.userId} className="flex items-center gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full ${s.connected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                    <span className="text-xs text-gray-500 truncate max-w-[120px]">{s.email}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-6 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-gray-950">User Management</h1>

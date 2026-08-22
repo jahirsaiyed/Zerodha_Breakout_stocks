@@ -1,5 +1,9 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, ReferenceLine,
+} from 'recharts'
 import api from '../lib/api'
 import type { Position } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
@@ -25,6 +29,22 @@ export function HistoryPage() {
 
   const wins = closed.filter(p => p.status === 'CLOSED_TARGET').length
   const losses = closed.filter(p => p.status === 'CLOSED_SL').length
+
+  // Build cumulative P&L series from closed (non-cancelled), sorted by closedAt
+  const closedForChart = closed
+    .filter(p => p.status !== 'CANCELLED' && p.closedAt)
+    .sort((a, b) => new Date(a.closedAt!).getTime() - new Date(b.closedAt!).getTime())
+
+  let running = 0
+  const chartData = closedForChart.map(p => {
+    running += p.realisedPnl ?? 0
+    return {
+      date: new Date(p.closedAt!).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      cumPnl: parseFloat(running.toFixed(2)),
+      pnl: parseFloat((p.realisedPnl ?? 0).toFixed(2)),
+      symbol: p.symbol,
+    }
+  })
 
   const FILTERS: { label: string; value: Filter }[] = [
     { label: 'All', value: 'ALL' },
@@ -63,6 +83,33 @@ export function HistoryPage() {
           </p>
         </div>
       </div>
+
+      {/* Cumulative P&L chart */}
+      {chartData.length > 1 && (
+        <div className="mb-6 rounded-xl border border-gray-200 bg-white p-5">
+          <h2 className="mb-4 text-sm font-semibold text-gray-950">Cumulative P&L</h2>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+              <defs>
+                <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#6366f1" stopOpacity={0.15} />
+                  <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
+              <XAxis dataKey="date" tick={{ fontSize: 11, fill: '#9ca3af' }} />
+              <YAxis tickFormatter={v => `₹${v}`} tick={{ fontSize: 11, fill: '#9ca3af' }} width={70} />
+              <ReferenceLine y={0} stroke="#e5e7eb" />
+              <Tooltip
+                formatter={(value: number) => [`₹${value.toFixed(2)}`, 'Cumulative P&L']}
+                contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
+              />
+              <Area type="monotone" dataKey="cumPnl" stroke="#6366f1" strokeWidth={2}
+                fill="url(#pnlGrad)" dot={false} activeDot={{ r: 4 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      )}
 
       {/* Filter pills */}
       <div className="mb-4 flex gap-2">
