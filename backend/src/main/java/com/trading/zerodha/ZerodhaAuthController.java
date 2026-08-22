@@ -11,8 +11,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
@@ -50,10 +49,19 @@ public class ZerodhaAuthController {
     @GetMapping("/login")
     @Operation(summary = "Initiate Zerodha OAuth login",
                description = "Sets a nonce cookie and redirects the user to the Zerodha login page")
-    public void login(@AuthenticationPrincipal UserDetails principal,
+    public void login(Authentication auth,
                       HttpServletResponse response) throws IOException {
-        Long userId = portfolioDbService.getUserIdByEmail(principal.getUsername());
-        ZerodhaAuthService.OAuthInitResult result = zerodhaAuthService.initiate(userId);
+        String frontendBase = zerodhaProperties.getFrontendUrl();
+
+        ZerodhaAuthService.OAuthInitResult result;
+        try {
+            Long userId = portfolioDbService.getUserIdByEmail(auth.getName());
+            result = zerodhaAuthService.initiate(userId);
+        } catch (Exception e) {
+            log.error("Zerodha login initiation failed for {}: {}", auth.getName(), e.getMessage());
+            response.sendRedirect(frontendBase + "/settings?zerodha=error&reason=init_failed");
+            return;
+        }
 
         // Store nonce in a short-lived HttpOnly cookie so we can read it on callback
         Cookie nonceCookie = new Cookie(NONCE_COOKIE, result.nonce());
@@ -109,9 +117,8 @@ public class ZerodhaAuthController {
 
     @GetMapping("/status")
     @Operation(summary = "Check Zerodha connection status")
-    public ResponseEntity<ApiResponse<Map<String, Object>>> status(
-            @AuthenticationPrincipal UserDetails principal) {
-        Long userId = portfolioDbService.getUserIdByEmail(principal.getUsername());
+    public ResponseEntity<ApiResponse<Map<String, Object>>> status(Authentication auth) {
+        Long userId = portfolioDbService.getUserIdByEmail(auth.getName());
         boolean connected = zerodhaAuthService.isConnected(userId);
         return ResponseEntity.ok(ApiResponse.success(Map.of("connected", connected)));
     }
@@ -120,9 +127,8 @@ public class ZerodhaAuthController {
 
     @DeleteMapping("/disconnect")
     @Operation(summary = "Disconnect Zerodha — clears the stored access token")
-    public ResponseEntity<ApiResponse<Void>> disconnect(
-            @AuthenticationPrincipal UserDetails principal) {
-        Long userId = portfolioDbService.getUserIdByEmail(principal.getUsername());
+    public ResponseEntity<ApiResponse<Void>> disconnect(Authentication auth) {
+        Long userId = portfolioDbService.getUserIdByEmail(auth.getName());
         zerodhaAuthService.disconnect(userId);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
@@ -133,9 +139,8 @@ public class ZerodhaAuthController {
     @Operation(summary = "Generate current TOTP code",
                description = "Returns the 6-digit TOTP code for the user's stored TOTP secret. "
                            + "Returns null if no TOTP secret is configured.")
-    public ResponseEntity<ApiResponse<Map<String, String>>> totp(
-            @AuthenticationPrincipal UserDetails principal) {
-        Long userId = portfolioDbService.getUserIdByEmail(principal.getUsername());
+    public ResponseEntity<ApiResponse<Map<String, String>>> totp(Authentication auth) {
+        Long userId = portfolioDbService.getUserIdByEmail(auth.getName());
         String code = zerodhaAuthService.generateTotp(userId);
         return ResponseEntity.ok(ApiResponse.success(
                 code != null ? Map.of("code", code) : Map.of()));

@@ -7,11 +7,19 @@ import org.springframework.stereotype.Component;
 @ConfigurationProperties(prefix = "zerodha")
 public class ZerodhaProperties {
 
+    private String apiKey;
+    private String apiSecret;
     private String baseUrl = "https://api.kite.trade";
     private String loginBaseUrl = "https://kite.zerodha.com/connect/login?v=3&api_key=";
     private String frontendUrl = "http://localhost:5173";
     private int connectTimeoutMs = 10_000;
     private int readTimeoutMs = 30_000;
+
+    public String getApiKey() { return apiKey; }
+    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+
+    public String getApiSecret() { return apiSecret; }
+    public void setApiSecret(String apiSecret) { this.apiSecret = apiSecret; }
 
     public String getBaseUrl() { return baseUrl; }
     public void setBaseUrl(String baseUrl) { this.baseUrl = baseUrl; }

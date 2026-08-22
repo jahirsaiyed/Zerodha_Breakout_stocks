@@ -52,7 +52,6 @@ public class DailyScheduler {
         int reminded = 0;
 
         for (UserConfig config : configs) {
-            if (config.getZerodhaApiKey() == null || config.getZerodhaApiKey().isBlank()) continue;
             if (!Boolean.TRUE.equals(config.getZerodhaConnected())
                     || config.getZerodhaAccessToken() == null) {
                 notificationService.notifyUser(config.getUser().getId(),

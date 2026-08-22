@@ -37,7 +37,6 @@ export interface UserConfig {
   orderExpiryDays: number
   telegramChatId: string | null
   zerodhaConnected: boolean
-  zerodhaApiKey: string | null
   hasTotpSecret: boolean
 }
 

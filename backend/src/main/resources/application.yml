@@ -40,6 +40,8 @@ portfolio:
     risk-reward-weight: ${SCORING_RISK_REWARD_WEIGHT:0.4}
 
 zerodha:
+  api-key: ${ZERODHA_API_KEY:}
+  api-secret: ${ZERODHA_API_SECRET:}
   base-url: ${ZERODHA_BASE_URL:https://api.kite.trade}
   login-base-url: ${ZERODHA_LOGIN_BASE_URL:https://kite.zerodha.com/connect/login?v=3&api_key=}
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
@@ -50,7 +52,7 @@ sheets:
   enabled: ${SHEETS_ENABLED:false}
   spreadsheet-id: ${SHEETS_SPREADSHEET_ID:}
   credentials-path: ${SHEETS_CREDENTIALS_PATH:}
-  range: ${SHEETS_RANGE:Sheet1!A2:E}
+  range: ${SHEETS_RANGE:'NSE Stock break out Ideas'!A2:Q}
 
 telegram:
   enabled: ${TELEGRAM_ENABLED:false}
@@ -68,4 +70,4 @@ springdoc:
 logging:
   level:
     root: INFO
-    com.trading: DEBUG
+    com.trading: INFO

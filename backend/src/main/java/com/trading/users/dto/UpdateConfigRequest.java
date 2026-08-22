@@ -10,7 +10,5 @@ public record UpdateConfigRequest(
     @DecimalMin("1000") BigDecimal positionSizingValue,
     @Min(1) @Max(30) Integer orderExpiryDays,
     String telegramChatId,
-    String zerodhaApiKey,
-    String zerodhaApiSecret,
     String zerodhaTotpSecret
 ) {}

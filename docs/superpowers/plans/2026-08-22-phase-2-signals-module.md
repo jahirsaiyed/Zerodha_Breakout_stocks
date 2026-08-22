@@ -6,9 +6,9 @@
 
 ## Status
 
-- [ ] Task 1: Signal JPA entities + repositories
-- [ ] Task 2: Signals service + REST API
-- [ ] Task 3: SignalSyncLog API + tests
+- [x] Task 1: Signal JPA entities + repositories
+- [x] Task 2: Signals service + REST API
+- [x] Task 3: SignalSyncLog API + tests
 
 ## Notes
 

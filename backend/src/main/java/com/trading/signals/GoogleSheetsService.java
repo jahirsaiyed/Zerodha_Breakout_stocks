@@ -62,6 +62,13 @@ public class GoogleSheetsService {
         }
     }
 
+    // Column indices in "NSE Stock break out Ideas" sheet (0-based, range A:Q)
+    private static final int COL_SYMBOL  = 1;  // B
+    private static final int COL_ENTRY   = 10; // K
+    private static final int COL_SL      = 11; // L
+    private static final int COL_TARGET  = 12; // M
+    private static final int COL_NOTES   = 16; // Q
+
     private List<SheetRow> parseRows(List<List<Object>> rawRows) {
         // Range starts at A2, so row 2 in the sheet = index 0 in rawRows
         int sheetRowNumber = 2;
@@ -69,17 +76,17 @@ public class GoogleSheetsService {
 
         for (List<Object> row : rawRows) {
             try {
-                if (row.size() < 4) {
-                    log.warn("Skipping sheet row {} — fewer than 4 columns", sheetRowNumber);
+                if (row.size() <= COL_TARGET) {
+                    log.debug("Skipping sheet row {} — not enough columns ({})", sheetRowNumber, row.size());
                     sheetRowNumber++;
                     continue;
                 }
 
-                String symbol     = cell(row, 0).toUpperCase();
-                BigDecimal entry  = decimal(row, 1);
-                BigDecimal sl     = decimal(row, 2);
-                BigDecimal target = decimal(row, 3);
-                String notes      = row.size() > 4 ? cell(row, 4) : null;
+                String symbol     = cell(row, COL_SYMBOL).toUpperCase();
+                BigDecimal entry  = decimal(row, COL_ENTRY);
+                BigDecimal sl     = decimal(row, COL_SL);
+                BigDecimal target = decimal(row, COL_TARGET);
+                String notes      = row.size() > COL_NOTES ? cell(row, COL_NOTES) : null;
                 String sourceRef  = sheetRowNumber + ":" + symbol;
 
                 SheetRow sheetRow = new SheetRow(sourceRef, symbol, entry, sl, target, notes);

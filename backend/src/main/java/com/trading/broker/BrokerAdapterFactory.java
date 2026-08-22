@@ -32,14 +32,14 @@ public class BrokerAdapterFactory {
     }
 
     public BrokerAdapter forUser(UserConfig config) {
-        String apiKey = config.getZerodhaApiKey();
+        String apiKey = props.getApiKey();
         String encryptedToken = config.getZerodhaAccessToken();
 
         if (apiKey == null || apiKey.isBlank()) {
-            throw new BrokerTokenException("User has no Zerodha API key configured");
+            throw new BrokerTokenException("Zerodha API key is not configured on the server");
         }
         if (encryptedToken == null || encryptedToken.isBlank()) {
-            throw new BrokerTokenException("User has no Zerodha access token — please re-login");
+            throw new BrokerTokenException("User has no Zerodha access token — please re-login via Settings");
         }
 
         String accessToken = encryptionUtil.decrypt(encryptedToken);

@@ -29,10 +29,10 @@ class BrokerAdapterFactoryTest {
     }
 
     @Test
-    @DisplayName("forUser creates ZerodhaBrokerAdapter with decrypted token")
+    @DisplayName("forUser creates ZerodhaBrokerAdapter with server API key and decrypted token")
     void forUser_validConfig_returnsAdapter() {
+        when(props.getApiKey()).thenReturn("serverApiKey");
         UserConfig config = UserConfig.builder()
-                .zerodhaApiKey("apikey123")
                 .zerodhaAccessToken("encrypted_token")
                 .build();
         when(encryptionUtil.decrypt("encrypted_token")).thenReturn("plaintext_token");
@@ -44,8 +44,9 @@ class BrokerAdapterFactoryTest {
     }
 
     @Test
-    @DisplayName("forUser throws BrokerTokenException when API key missing")
-    void forUser_noApiKey_throws() {
+    @DisplayName("forUser throws BrokerTokenException when server API key not configured")
+    void forUser_noServerApiKey_throws() {
+        when(props.getApiKey()).thenReturn(null);
         UserConfig config = UserConfig.builder().build();
 
         assertThatThrownBy(() -> factory.forUser(config))
@@ -56,9 +57,8 @@ class BrokerAdapterFactoryTest {
     @Test
     @DisplayName("forUser throws BrokerTokenException when access token missing")
     void forUser_noAccessToken_throws() {
-        UserConfig config = UserConfig.builder()
-                .zerodhaApiKey("apikey123")
-                .build();
+        when(props.getApiKey()).thenReturn("serverApiKey");
+        UserConfig config = UserConfig.builder().build();
 
         assertThatThrownBy(() -> factory.forUser(config))
                 .isInstanceOf(BrokerTokenException.class)

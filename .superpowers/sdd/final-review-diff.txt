@@ -1,0 +1,1363 @@
+diff --git a/backend/src/main/java/com/trading/TradingApplication.java b/backend/src/main/java/com/trading/TradingApplication.java
+new file mode 100644
+index 0000000..b6640f6
+--- /dev/null
++++ b/backend/src/main/java/com/trading/TradingApplication.java
+@@ -0,0 +1,13 @@
++package com.trading;
++
++import org.springframework.boot.SpringApplication;
++import org.springframework.boot.autoconfigure.SpringBootApplication;
++import org.springframework.scheduling.annotation.EnableScheduling;
++
++@SpringBootApplication
++@EnableScheduling
++public class TradingApplication {
++    public static void main(String[] args) {
++        SpringApplication.run(TradingApplication.class, args);
++    }
++}
+diff --git a/backend/src/main/java/com/trading/auth/AuthController.java b/backend/src/main/java/com/trading/auth/AuthController.java
+new file mode 100644
+index 0000000..272d167
+--- /dev/null
++++ b/backend/src/main/java/com/trading/auth/AuthController.java
+@@ -0,0 +1,29 @@
++package com.trading.auth;
++
++import com.trading.auth.dto.LoginRequest;
++import com.trading.common.ApiResponse;
++import com.trading.users.dto.UserResponse;
++import jakarta.servlet.http.HttpServletResponse;
++import jakarta.validation.Valid;
++import lombok.RequiredArgsConstructor;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.*;
++
++@RestController
++@RequestMapping("/api/auth")
++@RequiredArgsConstructor
++public class AuthController {
++    private final AuthService authService;
++
++    @PostMapping("/login")
++    public ResponseEntity<ApiResponse<UserResponse>> login(
++            @RequestBody @Valid LoginRequest req, HttpServletResponse response) {
++        return ResponseEntity.ok(ApiResponse.success(authService.login(req, response)));
++    }
++
++    @DeleteMapping("/logout")
++    public ResponseEntity<ApiResponse<Void>> logout(HttpServletResponse response) {
++        authService.logout(response);
++        return ResponseEntity.ok(ApiResponse.success(null));
++    }
++}
+diff --git a/backend/src/main/java/com/trading/auth/AuthService.java b/backend/src/main/java/com/trading/auth/AuthService.java
+new file mode 100644
+index 0000000..4f5a8bf
+--- /dev/null
++++ b/backend/src/main/java/com/trading/auth/AuthService.java
+@@ -0,0 +1,49 @@
++package com.trading.auth;
++
++import com.trading.auth.dto.LoginRequest;
++import com.trading.users.User;
++import com.trading.users.UserRepository;
++import com.trading.users.dto.UserResponse;
++import jakarta.servlet.http.HttpServletResponse;
++import lombok.RequiredArgsConstructor;
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.http.HttpHeaders;
++import org.springframework.http.ResponseCookie;
++import org.springframework.security.authentication.BadCredentialsException;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.stereotype.Service;
++
++import java.time.Duration;
++
++@Service
++@RequiredArgsConstructor
++public class AuthService {
++    private final UserRepository userRepository;
++    private final PasswordEncoder passwordEncoder;
++    private final JwtUtil jwtUtil;
++
++    @Value("${cookie.secure:false}") private boolean cookieSecure;
++
++    public UserResponse login(LoginRequest req, HttpServletResponse response) {
++        User user = userRepository.findByEmail(req.email())
++                .orElseThrow(() -> new BadCredentialsException("Invalid credentials"));
++        if (!user.getActive()) throw new BadCredentialsException("Account is deactivated");
++        if (!passwordEncoder.matches(req.password(), user.getPasswordHash()))
++            throw new BadCredentialsException("Invalid credentials");
++
++        String token = jwtUtil.generateToken(user.getEmail(), user.getRole().name());
++        ResponseCookie cookie = ResponseCookie.from("jwt", token)
++                .httpOnly(true).secure(cookieSecure).path("/")
++                .maxAge(Duration.ofHours(24)).sameSite("Strict").build();
++        response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
++
++        return new UserResponse(user.getId(), user.getName(), user.getEmail(),
++                user.getRole().name(), user.getActive());
++    }
++
++    public void logout(HttpServletResponse response) {
++        ResponseCookie cookie = ResponseCookie.from("jwt", "")
++                .httpOnly(true).secure(cookieSecure).path("/").maxAge(0).build();
++        response.setHeader(HttpHeaders.SET_COOKIE, cookie.toString());
++    }
++}
+diff --git a/backend/src/main/java/com/trading/auth/JwtFilter.java b/backend/src/main/java/com/trading/auth/JwtFilter.java
+new file mode 100644
+index 0000000..509946d
+--- /dev/null
++++ b/backend/src/main/java/com/trading/auth/JwtFilter.java
+@@ -0,0 +1,50 @@
++package com.trading.auth;
++
++import io.jsonwebtoken.Claims;
++import jakarta.servlet.FilterChain;
++import jakarta.servlet.ServletException;
++import jakarta.servlet.http.Cookie;
++import jakarta.servlet.http.HttpServletRequest;
++import jakarta.servlet.http.HttpServletResponse;
++import lombok.RequiredArgsConstructor;
++import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
++import org.springframework.security.core.authority.SimpleGrantedAuthority;
++import org.springframework.security.core.context.SecurityContextHolder;
++import org.springframework.stereotype.Component;
++import org.springframework.web.filter.OncePerRequestFilter;
++
++import java.io.IOException;
++import java.util.Arrays;
++import java.util.List;
++import java.util.Optional;
++
++@Component
++@RequiredArgsConstructor
++public class JwtFilter extends OncePerRequestFilter {
++    private final JwtUtil jwtUtil;
++
++    @Override
++    protected void doFilterInternal(HttpServletRequest req, HttpServletResponse res,
++                                    FilterChain chain) throws ServletException, IOException {
++        extractToken(req).ifPresent(token -> {
++            try {
++                Claims claims = jwtUtil.validateToken(token);
++                String role = claims.get("role", String.class);
++                var auth = new UsernamePasswordAuthenticationToken(
++                        claims.getSubject(), null,
++                        List.of(new SimpleGrantedAuthority("ROLE_" + role)));
++                SecurityContextHolder.getContext().setAuthentication(auth);
++            } catch (Exception ignored) { /* invalid token — Spring Security denies access */ }
++        });
++        chain.doFilter(req, res);
++    }
++
++    private Optional<String> extractToken(HttpServletRequest req) {
++        Cookie[] cookies = req.getCookies();
++        if (cookies == null) return Optional.empty();
++        return Arrays.stream(cookies)
++                .filter(c -> "jwt".equals(c.getName()))
++                .map(Cookie::getValue)
++                .findFirst();
++    }
++}
+diff --git a/backend/src/main/java/com/trading/auth/JwtUtil.java b/backend/src/main/java/com/trading/auth/JwtUtil.java
+new file mode 100644
+index 0000000..bc98438
+--- /dev/null
++++ b/backend/src/main/java/com/trading/auth/JwtUtil.java
+@@ -0,0 +1,36 @@
++package com.trading.auth;
++
++import io.jsonwebtoken.Claims;
++import io.jsonwebtoken.Jwts;
++import io.jsonwebtoken.security.Keys;
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.stereotype.Component;
++
++import javax.crypto.SecretKey;
++import java.nio.charset.StandardCharsets;
++import java.util.Date;
++
++@Component
++public class JwtUtil {
++    private final SecretKey key;
++    private static final long EXPIRY_MS = 24L * 60 * 60 * 1000;
++
++    public JwtUtil(@Value("${jwt.secret}") String secret) {
++        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
++    }
++
++    public String generateToken(String email, String role) {
++        return Jwts.builder()
++                .subject(email)
++                .claim("role", role)
++                .issuedAt(new Date())
++                .expiration(new Date(System.currentTimeMillis() + EXPIRY_MS))
++                .signWith(key)
++                .compact();
++    }
++
++    public Claims validateToken(String token) {
++        return Jwts.parser().verifyWith(key).build()
++                .parseSignedClaims(token).getPayload();
++    }
++}
+diff --git a/backend/src/main/java/com/trading/auth/dto/LoginRequest.java b/backend/src/main/java/com/trading/auth/dto/LoginRequest.java
+new file mode 100644
+index 0000000..e050b14
+--- /dev/null
++++ b/backend/src/main/java/com/trading/auth/dto/LoginRequest.java
+@@ -0,0 +1,4 @@
++package com.trading.auth.dto;
++import jakarta.validation.constraints.Email;
++import jakarta.validation.constraints.NotBlank;
++public record LoginRequest(@Email @NotBlank String email, @NotBlank String password) {}
+diff --git a/backend/src/main/java/com/trading/common/ApiResponse.java b/backend/src/main/java/com/trading/common/ApiResponse.java
+new file mode 100644
+index 0000000..a0abd4d
+--- /dev/null
++++ b/backend/src/main/java/com/trading/common/ApiResponse.java
+@@ -0,0 +1,10 @@
++package com.trading.common;
++
++public record ApiResponse<T>(boolean success, T data, String error) {
++    public static <T> ApiResponse<T> success(T data) {
++        return new ApiResponse<>(true, data, null);
++    }
++    public static ApiResponse<Void> error(String message) {
++        return new ApiResponse<>(false, null, message);
++    }
++}
+diff --git a/backend/src/main/java/com/trading/common/EncryptionUtil.java b/backend/src/main/java/com/trading/common/EncryptionUtil.java
+new file mode 100644
+index 0000000..a375728
+--- /dev/null
++++ b/backend/src/main/java/com/trading/common/EncryptionUtil.java
+@@ -0,0 +1,57 @@
++package com.trading.common;
++
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.stereotype.Component;
++import javax.crypto.Cipher;
++import javax.crypto.spec.GCMParameterSpec;
++import javax.crypto.spec.SecretKeySpec;
++import java.security.SecureRandom;
++import java.util.Arrays;
++import java.util.Base64;
++import java.nio.charset.StandardCharsets;
++
++@Component
++public class EncryptionUtil {
++    private static final String ALGORITHM = "AES/GCM/NoPadding";
++    private static final int IV_LENGTH = 12;
++    private static final int TAG_LENGTH = 128;
++
++    private final byte[] keyBytes;
++
++    public EncryptionUtil(@Value("${encryption.key}") String key) {
++        byte[] raw = key.getBytes(StandardCharsets.UTF_8);
++        keyBytes = new byte[32];
++        System.arraycopy(raw, 0, keyBytes, 0, Math.min(raw.length, 32));
++    }
++
++    public String encrypt(String plaintext) {
++        try {
++            byte[] iv = new byte[IV_LENGTH];
++            new SecureRandom().nextBytes(iv);
++            Cipher cipher = Cipher.getInstance(ALGORITHM);
++            cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(keyBytes, "AES"),
++                    new GCMParameterSpec(TAG_LENGTH, iv));
++            byte[] encrypted = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
++            byte[] combined = new byte[IV_LENGTH + encrypted.length];
++            System.arraycopy(iv, 0, combined, 0, IV_LENGTH);
++            System.arraycopy(encrypted, 0, combined, IV_LENGTH, encrypted.length);
++            return Base64.getEncoder().encodeToString(combined);
++        } catch (Exception e) {
++            throw new RuntimeException("Encryption failed", e);
++        }
++    }
++
++    public String decrypt(String ciphertext) {
++        try {
++            byte[] combined = Base64.getDecoder().decode(ciphertext);
++            byte[] iv = Arrays.copyOfRange(combined, 0, IV_LENGTH);
++            byte[] encrypted = Arrays.copyOfRange(combined, IV_LENGTH, combined.length);
++            Cipher cipher = Cipher.getInstance(ALGORITHM);
++            cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(keyBytes, "AES"),
++                    new GCMParameterSpec(TAG_LENGTH, iv));
++            return new String(cipher.doFinal(encrypted), StandardCharsets.UTF_8);
++        } catch (Exception e) {
++            throw new RuntimeException("Decryption failed", e);
++        }
++    }
++}
+diff --git a/backend/src/main/java/com/trading/common/GlobalExceptionHandler.java b/backend/src/main/java/com/trading/common/GlobalExceptionHandler.java
+new file mode 100644
+index 0000000..8d289dc
+--- /dev/null
++++ b/backend/src/main/java/com/trading/common/GlobalExceptionHandler.java
+@@ -0,0 +1,44 @@
++package com.trading.common;
++
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++import org.springframework.security.access.AccessDeniedException;
++import org.springframework.security.authentication.BadCredentialsException;
++import org.springframework.validation.FieldError;
++import org.springframework.web.bind.MethodArgumentNotValidException;
++import org.springframework.web.bind.annotation.ExceptionHandler;
++import org.springframework.web.bind.annotation.RestControllerAdvice;
++import java.util.stream.Collectors;
++
++@RestControllerAdvice
++public class GlobalExceptionHandler {
++
++    @ExceptionHandler(BadCredentialsException.class)
++    public ResponseEntity<ApiResponse<Void>> handleBadCredentials(BadCredentialsException e) {
++        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));
++    }
++
++    @ExceptionHandler(AccessDeniedException.class)
++    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(AccessDeniedException e) {
++        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(ApiResponse.error("Access denied"));
++    }
++
++    @ExceptionHandler(IllegalArgumentException.class)
++    public ResponseEntity<ApiResponse<Void>> handleIllegalArgument(IllegalArgumentException e) {
++        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
++    }
++
++    @ExceptionHandler(MethodArgumentNotValidException.class)
++    public ResponseEntity<ApiResponse<Void>> handleValidation(MethodArgumentNotValidException e) {
++        String message = e.getBindingResult().getFieldErrors().stream()
++                .map(FieldError::getDefaultMessage)
++                .collect(Collectors.joining("; "));
++        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(message));
++    }
++
++    @ExceptionHandler(Exception.class)
++    public ResponseEntity<ApiResponse<Void>> handleGeneral(Exception e) {
++        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
++                .body(ApiResponse.error("Internal server error"));
++    }
++}
+diff --git a/backend/src/main/java/com/trading/config/SecurityConfig.java b/backend/src/main/java/com/trading/config/SecurityConfig.java
+new file mode 100644
+index 0000000..07e7582
+--- /dev/null
++++ b/backend/src/main/java/com/trading/config/SecurityConfig.java
+@@ -0,0 +1,61 @@
++package com.trading.config;
++
++import com.trading.auth.JwtFilter;
++import lombok.RequiredArgsConstructor;
++import org.springframework.beans.factory.annotation.Value;
++import org.springframework.context.annotation.Bean;
++import org.springframework.context.annotation.Configuration;
++import org.springframework.security.config.annotation.web.builders.HttpSecurity;
++import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
++import org.springframework.security.config.http.SessionCreationPolicy;
++import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.security.web.SecurityFilterChain;
++import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
++import org.springframework.web.cors.CorsConfiguration;
++import org.springframework.web.cors.CorsConfigurationSource;
++import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
++
++import java.util.List;
++
++@Configuration
++@EnableWebSecurity
++@RequiredArgsConstructor
++public class SecurityConfig {
++    private final JwtFilter jwtFilter;
++
++    @Value("${cors.allowed-origin}") private String allowedOrigin;
++
++    @Bean
++    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
++        return http
++                .csrf(csrf -> csrf.disable())
++                .cors(cors -> cors.configurationSource(corsSource()))
++                .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
++                .authorizeHttpRequests(auth -> auth
++                        .requestMatchers("/api/auth/login", "/api/auth/logout").permitAll()
++                        .requestMatchers("/api/admin/**").hasRole("ADMIN")
++                        .requestMatchers("/actuator/health").permitAll()
++                        .anyRequest().authenticated())
++                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
++                .build();
++    }
++
++    @Bean
++    public PasswordEncoder passwordEncoder() {
++        return new BCryptPasswordEncoder();
++    }
++
++    @Bean
++    CorsConfigurationSource corsSource() {
++        CorsConfiguration config = new CorsConfiguration();
++        config.setAllowedOrigins(List.of(allowedOrigin));
++        config.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
++        config.setAllowedHeaders(List.of("*"));
++        config.setAllowCredentials(true);
++        UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
++        source.registerCorsConfiguration("/api/**", config);
++        source.registerCorsConfiguration("/actuator/**", config);
++        return source;
++    }
++}
+diff --git a/backend/src/main/java/com/trading/users/AdminController.java b/backend/src/main/java/com/trading/users/AdminController.java
+new file mode 100644
+index 0000000..c3fc447
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/AdminController.java
+@@ -0,0 +1,37 @@
++package com.trading.users;
++
++import com.trading.common.ApiResponse;
++import com.trading.users.dto.CreateUserRequest;
++import com.trading.users.dto.UserResponse;
++import jakarta.validation.Valid;
++import lombok.RequiredArgsConstructor;
++import org.springframework.http.HttpStatus;
++import org.springframework.http.ResponseEntity;
++import org.springframework.web.bind.annotation.*;
++
++import java.util.List;
++
++@RestController
++@RequestMapping("/api/admin")
++@RequiredArgsConstructor
++public class AdminController {
++    private final UserService userService;
++
++    @GetMapping("/users")
++    public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers() {
++        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers()));
++    }
++
++    @PostMapping("/users")
++    public ResponseEntity<ApiResponse<UserResponse>> createUser(@RequestBody @Valid CreateUserRequest req) {
++        return ResponseEntity.status(HttpStatus.CREATED)
++                .body(ApiResponse.success(userService.createUser(req)));
++    }
++
++    @PatchMapping("/users/{id}/status")
++    public ResponseEntity<ApiResponse<Void>> setStatus(
++            @PathVariable Long id, @RequestParam boolean active) {
++        userService.setUserActive(id, active);
++        return ResponseEntity.ok(ApiResponse.success(null));
++    }
++}
+diff --git a/backend/src/main/java/com/trading/users/PositionSizingMethod.java b/backend/src/main/java/com/trading/users/PositionSizingMethod.java
+new file mode 100644
+index 0000000..fdb4157
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/PositionSizingMethod.java
+@@ -0,0 +1,2 @@
++package com.trading.users;
++public enum PositionSizingMethod { EQUAL, FIXED, RISK_BASED }
+diff --git a/backend/src/main/java/com/trading/users/User.java b/backend/src/main/java/com/trading/users/User.java
+new file mode 100644
+index 0000000..1a15537
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/User.java
+@@ -0,0 +1,29 @@
++package com.trading.users;
++
++import jakarta.persistence.*;
++import lombok.*;
++import org.hibernate.annotations.CreationTimestamp;
++import java.time.LocalDateTime;
++
++@Entity
++@Table(name = "users")
++@Data @NoArgsConstructor @AllArgsConstructor @Builder
++public class User {
++    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @Column(nullable = false) private String name;
++    @Column(nullable = false, unique = true) private String email;
++    @Column(name = "password_hash", nullable = false) private String passwordHash;
++
++    @Builder.Default
++    @Enumerated(EnumType.STRING)
++    @Column(nullable = false) private UserRole role = UserRole.USER;
++
++    @Builder.Default
++    @Column(nullable = false) private Boolean active = true;
++
++    @CreationTimestamp
++    @Column(name = "created_at", nullable = false, updatable = false)
++    private LocalDateTime createdAt;
++}
+diff --git a/backend/src/main/java/com/trading/users/UserConfig.java b/backend/src/main/java/com/trading/users/UserConfig.java
+new file mode 100644
+index 0000000..e458d16
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserConfig.java
+@@ -0,0 +1,43 @@
++package com.trading.users;
++
++import jakarta.persistence.*;
++import lombok.*;
++import org.hibernate.annotations.UpdateTimestamp;
++import java.math.BigDecimal;
++import java.time.LocalDateTime;
++
++@Entity
++@Table(name = "user_configs")
++@Data @NoArgsConstructor @AllArgsConstructor @Builder
++public class UserConfig {
++    @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
++    private Long id;
++
++    @OneToOne @JoinColumn(name = "user_id", nullable = false, unique = true)
++    private User user;
++
++    @Builder.Default
++    @Column(name = "max_positions", nullable = false) private Integer maxPositions = 5;
++
++    @Builder.Default
++    @Enumerated(EnumType.STRING)
++    @Column(name = "position_sizing_method", nullable = false)
++    private PositionSizingMethod positionSizingMethod = PositionSizingMethod.FIXED;
++
++    @Builder.Default
++    @Column(name = "position_sizing_value", nullable = false)
++    private BigDecimal positionSizingValue = new BigDecimal("10000");
++
++    @Builder.Default
++    @Column(name = "order_expiry_days", nullable = false) private Integer orderExpiryDays = 5;
++    @Column(name = "zerodha_api_key") private String zerodhaApiKey;
++    @Column(name = "zerodha_api_secret") private String zerodhaApiSecret;     // stored encrypted
++    @Column(name = "zerodha_access_token") private String zerodhaAccessToken; // stored encrypted
++    @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
++    @Column(name = "telegram_chat_id") private String telegramChatId;
++    @Builder.Default
++    @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
++
++    @UpdateTimestamp
++    @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt;
++}
+diff --git a/backend/src/main/java/com/trading/users/UserConfigRepository.java b/backend/src/main/java/com/trading/users/UserConfigRepository.java
+new file mode 100644
+index 0000000..4aee19d
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserConfigRepository.java
+@@ -0,0 +1,9 @@
++package com.trading.users;
++
++import org.springframework.data.jpa.repository.JpaRepository;
++import java.util.Optional;
++
++public interface UserConfigRepository extends JpaRepository<UserConfig, Long> {
++    Optional<UserConfig> findByUser(User user);
++    Optional<UserConfig> findByUser_Email(String email);
++}
+diff --git a/backend/src/main/java/com/trading/users/UserController.java b/backend/src/main/java/com/trading/users/UserController.java
+new file mode 100644
+index 0000000..e80d0df
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserController.java
+@@ -0,0 +1,34 @@
++package com.trading.users;
++
++import com.trading.common.ApiResponse;
++import com.trading.users.dto.UpdateConfigRequest;
++import com.trading.users.dto.UserConfigResponse;
++import com.trading.users.dto.UserResponse;
++import jakarta.validation.Valid;
++import lombok.RequiredArgsConstructor;
++import org.springframework.http.ResponseEntity;
++import org.springframework.security.core.Authentication;
++import org.springframework.web.bind.annotation.*;
++
++@RestController
++@RequestMapping("/api/users")
++@RequiredArgsConstructor
++public class UserController {
++    private final UserService userService;
++
++    @GetMapping("/me")
++    public ResponseEntity<ApiResponse<UserResponse>> getMe(Authentication auth) {
++        return ResponseEntity.ok(ApiResponse.success(userService.getUserByEmail(auth.getName())));
++    }
++
++    @GetMapping("/me/config")
++    public ResponseEntity<ApiResponse<UserConfigResponse>> getMyConfig(Authentication auth) {
++        return ResponseEntity.ok(ApiResponse.success(userService.getConfigByEmail(auth.getName())));
++    }
++
++    @PutMapping("/me/config")
++    public ResponseEntity<ApiResponse<UserConfigResponse>> updateMyConfig(
++            Authentication auth, @RequestBody @Valid UpdateConfigRequest req) {
++        return ResponseEntity.ok(ApiResponse.success(userService.updateConfig(auth.getName(), req)));
++    }
++}
+diff --git a/backend/src/main/java/com/trading/users/UserRepository.java b/backend/src/main/java/com/trading/users/UserRepository.java
+new file mode 100644
+index 0000000..8aa40de
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserRepository.java
+@@ -0,0 +1,9 @@
++package com.trading.users;
++
++import org.springframework.data.jpa.repository.JpaRepository;
++import java.util.Optional;
++
++public interface UserRepository extends JpaRepository<User, Long> {
++    Optional<User> findByEmail(String email);
++    boolean existsByEmail(String email);
++}
+diff --git a/backend/src/main/java/com/trading/users/UserRole.java b/backend/src/main/java/com/trading/users/UserRole.java
+new file mode 100644
+index 0000000..ace279e
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserRole.java
+@@ -0,0 +1,2 @@
++package com.trading.users;
++public enum UserRole { ADMIN, USER }
+diff --git a/backend/src/main/java/com/trading/users/UserService.java b/backend/src/main/java/com/trading/users/UserService.java
+new file mode 100644
+index 0000000..2e4b25e
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/UserService.java
+@@ -0,0 +1,89 @@
++package com.trading.users;
++
++import com.trading.common.EncryptionUtil;
++import com.trading.users.dto.*;
++import lombok.RequiredArgsConstructor;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import org.springframework.stereotype.Service;
++import org.springframework.transaction.annotation.Transactional;
++import java.util.List;
++
++@Service
++@RequiredArgsConstructor
++public class UserService {
++    private final UserRepository userRepository;
++    private final UserConfigRepository userConfigRepository;
++    private final PasswordEncoder passwordEncoder;
++    private final EncryptionUtil encryptionUtil;
++
++    @Transactional
++    public UserResponse createUser(CreateUserRequest req) {
++        if (userRepository.existsByEmail(req.email())) {
++            throw new IllegalArgumentException("Email already registered: " + req.email());
++        }
++        User user = User.builder()
++                .name(req.name()).email(req.email())
++                .passwordHash(passwordEncoder.encode(req.password()))
++                .role(req.role() != null ? req.role() : UserRole.USER)
++                .active(true).build();
++        user = userRepository.save(user);
++        userConfigRepository.save(UserConfig.builder().user(user).build());
++        return toResponse(user);
++    }
++
++    @Transactional(readOnly = true)
++    public UserResponse getUserByEmail(String email) {
++        return toResponse(findByEmail(email));
++    }
++
++    @Transactional(readOnly = true)
++    public List<UserResponse> getAllUsers() {
++        return userRepository.findAll().stream().map(this::toResponse).toList();
++    }
++
++    @Transactional
++    public void setUserActive(Long id, boolean active) {
++        User user = userRepository.findById(id)
++                .orElseThrow(() -> new IllegalArgumentException("User not found: " + id));
++        user.setActive(active);
++        userRepository.save(user);
++    }
++
++    @Transactional(readOnly = true)
++    public UserConfigResponse getConfigByEmail(String email) {
++        UserConfig cfg = userConfigRepository.findByUser_Email(email)
++                .orElseThrow(() -> new IllegalArgumentException("Config not found for: " + email));
++        return toConfigResponse(cfg);
++    }
++
++    @Transactional
++    public UserConfigResponse updateConfig(String email, UpdateConfigRequest req) {
++        UserConfig cfg = userConfigRepository.findByUser_Email(email)
++                .orElseThrow(() -> new IllegalArgumentException("Config not found for: " + email));
++        if (req.maxPositions() != null) cfg.setMaxPositions(req.maxPositions());
++        if (req.positionSizingMethod() != null) cfg.setPositionSizingMethod(req.positionSizingMethod());
++        if (req.positionSizingValue() != null) cfg.setPositionSizingValue(req.positionSizingValue());
++        if (req.orderExpiryDays() != null) cfg.setOrderExpiryDays(req.orderExpiryDays());
++        if (req.telegramChatId() != null) cfg.setTelegramChatId(req.telegramChatId());
++        if (req.zerodhaApiKey() != null) cfg.setZerodhaApiKey(req.zerodhaApiKey());
++        if (req.zerodhaApiSecret() != null)
++            cfg.setZerodhaApiSecret(encryptionUtil.encrypt(req.zerodhaApiSecret()));
++        return toConfigResponse(userConfigRepository.save(cfg));
++    }
++
++    private User findByEmail(String email) {
++        return userRepository.findByEmail(email)
++                .orElseThrow(() -> new IllegalArgumentException("User not found: " + email));
++    }
++
++    private UserResponse toResponse(User u) {
++        return new UserResponse(u.getId(), u.getName(), u.getEmail(), u.getRole().name(), u.getActive());
++    }
++
++    private UserConfigResponse toConfigResponse(UserConfig cfg) {
++        return new UserConfigResponse(
++                cfg.getMaxPositions(), cfg.getPositionSizingMethod().name(),
++                cfg.getPositionSizingValue(), cfg.getOrderExpiryDays(),
++                cfg.getTelegramChatId(), cfg.getZerodhaConnected(), cfg.getZerodhaApiKey());
++    }
++}
+diff --git a/backend/src/main/java/com/trading/users/dto/CreateUserRequest.java b/backend/src/main/java/com/trading/users/dto/CreateUserRequest.java
+new file mode 100644
+index 0000000..aa5b194
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/dto/CreateUserRequest.java
+@@ -0,0 +1,11 @@
++package com.trading.users.dto;
++
++import com.trading.users.UserRole;
++import jakarta.validation.constraints.*;
++
++public record CreateUserRequest(
++    @NotBlank String name,
++    @Email @NotBlank String email,
++    @NotBlank @Size(min = 8) String password,
++    UserRole role
++) {}
+diff --git a/backend/src/main/java/com/trading/users/dto/UpdateConfigRequest.java b/backend/src/main/java/com/trading/users/dto/UpdateConfigRequest.java
+new file mode 100644
+index 0000000..0c88703
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/dto/UpdateConfigRequest.java
+@@ -0,0 +1,15 @@
++package com.trading.users.dto;
++
++import com.trading.users.PositionSizingMethod;
++import jakarta.validation.constraints.*;
++import java.math.BigDecimal;
++
++public record UpdateConfigRequest(
++    @Min(1) @Max(50) Integer maxPositions,
++    PositionSizingMethod positionSizingMethod,
++    @DecimalMin("1000") BigDecimal positionSizingValue,
++    @Min(1) @Max(30) Integer orderExpiryDays,
++    String telegramChatId,
++    String zerodhaApiKey,
++    String zerodhaApiSecret
++) {}
+diff --git a/backend/src/main/java/com/trading/users/dto/UserConfigResponse.java b/backend/src/main/java/com/trading/users/dto/UserConfigResponse.java
+new file mode 100644
+index 0000000..70e6463
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/dto/UserConfigResponse.java
+@@ -0,0 +1,13 @@
++package com.trading.users.dto;
++
++import java.math.BigDecimal;
++
++public record UserConfigResponse(
++    Integer maxPositions,
++    String positionSizingMethod,
++    BigDecimal positionSizingValue,
++    Integer orderExpiryDays,
++    String telegramChatId,
++    Boolean zerodhaConnected,
++    String zerodhaApiKey
++) {}
+diff --git a/backend/src/main/java/com/trading/users/dto/UserResponse.java b/backend/src/main/java/com/trading/users/dto/UserResponse.java
+new file mode 100644
+index 0000000..0639ed8
+--- /dev/null
++++ b/backend/src/main/java/com/trading/users/dto/UserResponse.java
+@@ -0,0 +1,3 @@
++package com.trading.users.dto;
++
++public record UserResponse(Long id, String name, String email, String role, Boolean active) {}
+diff --git a/backend/src/main/resources/application.yml b/backend/src/main/resources/application.yml
+new file mode 100644
+index 0000000..4d547cc
+--- /dev/null
++++ b/backend/src/main/resources/application.yml
+@@ -0,0 +1,40 @@
++spring:
++  application:
++    name: trading-backend
++  datasource:
++    url: ${DB_URL:jdbc:postgresql://localhost:5432/trading}
++    username: ${DB_USERNAME:trading}
++    password: ${DB_PASSWORD:trading}
++    driver-class-name: org.postgresql.Driver
++  jpa:
++    hibernate:
++      ddl-auto: validate
++    show-sql: false
++    properties:
++      hibernate:
++        dialect: org.hibernate.dialect.PostgreSQLDialect
++        jdbc:
++          time_zone: UTC
++  flyway:
++    enabled: true
++    locations: classpath:db/migration
++
++server:
++  port: 8080
++
++jwt:
++  secret: ${JWT_SECRET}
++
++encryption:
++  key: ${ENCRYPTION_KEY}
++
++cors:
++  allowed-origin: ${CORS_ALLOWED_ORIGINS:http://localhost:5173}
++
++cookie:
++  secure: ${COOKIE_SECURE:false}
++
++logging:
++  level:
++    root: INFO
++    com.trading: DEBUG
+diff --git a/backend/src/main/resources/db/migration/V1__initial_schema.sql b/backend/src/main/resources/db/migration/V1__initial_schema.sql
+new file mode 100644
+index 0000000..3f4bad0
+--- /dev/null
++++ b/backend/src/main/resources/db/migration/V1__initial_schema.sql
+@@ -0,0 +1,93 @@
++CREATE TABLE users (
++    id            BIGSERIAL PRIMARY KEY,
++    name          VARCHAR(255) NOT NULL,
++    email         VARCHAR(255) NOT NULL UNIQUE,
++    password_hash VARCHAR(255) NOT NULL,
++    role          VARCHAR(20)  NOT NULL DEFAULT 'USER'
++                  CHECK (role IN ('ADMIN', 'USER')),
++    active        BOOLEAN      NOT NULL DEFAULT TRUE,
++    created_at    TIMESTAMP    NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE user_configs (
++    id                     BIGSERIAL PRIMARY KEY,
++    user_id                BIGINT       NOT NULL UNIQUE REFERENCES users(id),
++    max_positions          INT          NOT NULL DEFAULT 5,
++    position_sizing_method VARCHAR(20)  NOT NULL DEFAULT 'FIXED'
++                           CHECK (position_sizing_method IN ('EQUAL','FIXED','RISK_BASED')),
++    position_sizing_value  NUMERIC(18,2) NOT NULL DEFAULT 10000,
++    order_expiry_days      INT          NOT NULL DEFAULT 5,
++    zerodha_api_key        VARCHAR(255),
++    zerodha_api_secret     VARCHAR(1000),
++    zerodha_access_token   VARCHAR(2000),
++    zerodha_totp_secret    VARCHAR(1000),
++    telegram_chat_id       VARCHAR(100),
++    zerodha_connected      BOOLEAN      NOT NULL DEFAULT FALSE,
++    updated_at             TIMESTAMP    NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE signals (
++    id                BIGSERIAL PRIMARY KEY,
++    symbol            VARCHAR(50)   NOT NULL,
++    entry_price       NUMERIC(18,2) NOT NULL,
++    stop_loss         NUMERIC(18,2) NOT NULL,
++    target            NUMERIC(18,2) NOT NULL,
++    risk_reward_ratio NUMERIC(10,4) NOT NULL,
++    source            VARCHAR(20)   NOT NULL
++                      CHECK (source IN ('GOOGLE_SHEET','MANUAL')),
++    source_ref        VARCHAR(255),
++    status            VARCHAR(20)   NOT NULL DEFAULT 'ACTIVE'
++                      CHECK (status IN ('ACTIVE','EXPIRED','CANCELLED')),
++    notes             TEXT,
++    added_at          TIMESTAMP     NOT NULL DEFAULT NOW(),
++    updated_at        TIMESTAMP     NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE positions (
++    id              BIGSERIAL PRIMARY KEY,
++    user_id         BIGINT        NOT NULL REFERENCES users(id),
++    signal_id       BIGINT        REFERENCES signals(id),
++    symbol          VARCHAR(50)   NOT NULL,
++    quantity        INT           NOT NULL,
++    avg_entry_price NUMERIC(18,2),
++    entry_order_id  VARCHAR(255),
++    gtt_order_id    VARCHAR(255),
++    status          VARCHAR(25)   NOT NULL DEFAULT 'PENDING_ENTRY'
++                    CHECK (status IN ('PENDING_ENTRY','ACTIVE','CANCELLED',
++                                      'CLOSED_TARGET','CLOSED_SL','CLOSED_MANUAL')),
++    opened_at       TIMESTAMP,
++    closed_at       TIMESTAMP,
++    realised_pnl    NUMERIC(18,2)
++);
++
++CREATE UNIQUE INDEX uq_position_user_signal_active
++    ON positions(user_id, signal_id)
++    WHERE status IN ('PENDING_ENTRY', 'ACTIVE');
++
++CREATE TABLE orders (
++    id               BIGSERIAL PRIMARY KEY,
++    user_id          BIGINT        NOT NULL REFERENCES users(id),
++    position_id      BIGINT        REFERENCES positions(id),
++    zerodha_order_id VARCHAR(255),
++    type             VARCHAR(20)   NOT NULL
++                     CHECK (type IN ('ENTRY','EXIT_TARGET','EXIT_SL')),
++    order_kind       VARCHAR(20)   NOT NULL
++                     CHECK (order_kind IN ('LIMIT','GTT_OCO','MARKET')),
++    symbol           VARCHAR(50)   NOT NULL,
++    quantity         INT           NOT NULL,
++    price            NUMERIC(18,2),
++    status           VARCHAR(20)   NOT NULL DEFAULT 'PENDING'
++                     CHECK (status IN ('PENDING','FILLED','CANCELLED','REJECTED')),
++    placed_at        TIMESTAMP     NOT NULL DEFAULT NOW(),
++    updated_at       TIMESTAMP     NOT NULL DEFAULT NOW()
++);
++
++CREATE TABLE signal_sync_log (
++    id               BIGSERIAL PRIMARY KEY,
++    synced_at        TIMESTAMP   NOT NULL DEFAULT NOW(),
++    source           VARCHAR(20) NOT NULL CHECK (source IN ('GOOGLE_SHEET','MANUAL')),
++    signals_added    INT         NOT NULL DEFAULT 0,
++    signals_modified INT         NOT NULL DEFAULT 0,
++    signals_removed  INT         NOT NULL DEFAULT 0,
++    notes            TEXT
++);
+diff --git a/backend/src/test/java/com/trading/auth/AuthControllerTest.java b/backend/src/test/java/com/trading/auth/AuthControllerTest.java
+new file mode 100644
+index 0000000..e9b9bde
+--- /dev/null
++++ b/backend/src/test/java/com/trading/auth/AuthControllerTest.java
+@@ -0,0 +1,75 @@
++package com.trading.auth;
++
++import com.fasterxml.jackson.databind.ObjectMapper;
++import com.trading.auth.dto.LoginRequest;
++import com.trading.users.dto.UserResponse;
++import org.junit.jupiter.api.Test;
++import org.springframework.beans.factory.annotation.Autowired;
++import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
++import org.springframework.boot.test.mock.mockito.MockBean;
++import org.springframework.context.annotation.Import;
++import org.springframework.http.MediaType;
++import org.springframework.security.authentication.BadCredentialsException;
++import org.springframework.test.context.TestPropertySource;
++import org.springframework.test.web.servlet.MockMvc;
++
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.verify;
++import static org.mockito.Mockito.when;
++import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
++import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
++
++@WebMvcTest(AuthController.class)
++@Import(com.trading.config.SecurityConfig.class)
++@TestPropertySource(properties = {
++        "cors.allowed-origin=http://localhost:3000",
++        "jwt.secret=test-secret-key-that-is-at-least-64-characters-long-for-hmac-sha"
++})
++class AuthControllerTest {
++
++    @Autowired MockMvc mockMvc;
++    @Autowired ObjectMapper objectMapper;
++    @MockBean AuthService authService;
++    @MockBean JwtUtil jwtUtil;  // JwtFilter depends on this
++
++    @Test
++    void login_returns200WithUserOnSuccess() throws Exception {
++        UserResponse user = new UserResponse(1L, "Alice", "alice@test.com", "USER", true);
++        when(authService.login(any(), any())).thenReturn(user);
++
++        mockMvc.perform(post("/api/auth/login")
++                .contentType(MediaType.APPLICATION_JSON)
++                .content(objectMapper.writeValueAsString(new LoginRequest("alice@test.com", "pw"))))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.success").value(true))
++                .andExpect(jsonPath("$.data.email").value("alice@test.com"));
++    }
++
++    @Test
++    void login_returns401OnBadCredentials() throws Exception {
++        when(authService.login(any(), any())).thenThrow(new BadCredentialsException("Invalid credentials"));
++
++        mockMvc.perform(post("/api/auth/login")
++                .contentType(MediaType.APPLICATION_JSON)
++                .content(objectMapper.writeValueAsString(new LoginRequest("x@x.com", "wrong"))))
++                .andExpect(status().isUnauthorized())
++                .andExpect(jsonPath("$.success").value(false));
++    }
++
++    @Test
++    void login_returns400OnInvalidEmail() throws Exception {
++        mockMvc.perform(post("/api/auth/login")
++                .contentType(MediaType.APPLICATION_JSON)
++                .content("{\"email\":\"not-an-email\",\"password\":\"pw\"}"))
++                .andExpect(status().isBadRequest())
++                .andExpect(jsonPath("$.success").value(false));
++    }
++
++    @Test
++    void logout_returns200() throws Exception {
++        mockMvc.perform(delete("/api/auth/logout"))
++                .andExpect(status().isOk())
++                .andExpect(jsonPath("$.success").value(true));
++        verify(authService).logout(any());
++    }
++}
+diff --git a/backend/src/test/java/com/trading/common/EncryptionUtilTest.java b/backend/src/test/java/com/trading/common/EncryptionUtilTest.java
+new file mode 100644
+index 0000000..140109f
+--- /dev/null
++++ b/backend/src/test/java/com/trading/common/EncryptionUtilTest.java
+@@ -0,0 +1,23 @@
++package com.trading.common;
++
++import org.junit.jupiter.api.Test;
++import static org.assertj.core.api.Assertions.*;
++
++class EncryptionUtilTest {
++    private final EncryptionUtil util = new EncryptionUtil("test-key-32-characters-long!!!!!");
++
++    @Test
++    void encryptAndDecrypt_roundTrips() {
++        String plaintext = "my-secret-api-key";
++        String encrypted = util.encrypt(plaintext);
++        assertThat(encrypted).isNotEqualTo(plaintext);
++        assertThat(util.decrypt(encrypted)).isEqualTo(plaintext);
++    }
++
++    @Test
++    void encrypt_producesDifferentCiphertextEachTime() {
++        String a = util.encrypt("same");
++        String b = util.encrypt("same");
++        assertThat(a).isNotEqualTo(b);
++    }
++}
+diff --git a/backend/src/test/java/com/trading/users/UserServiceTest.java b/backend/src/test/java/com/trading/users/UserServiceTest.java
+new file mode 100644
+index 0000000..9d1cb93
+--- /dev/null
++++ b/backend/src/test/java/com/trading/users/UserServiceTest.java
+@@ -0,0 +1,57 @@
++package com.trading.users;
++
++import com.trading.common.EncryptionUtil;
++import com.trading.users.dto.CreateUserRequest;
++import com.trading.users.dto.UserResponse;
++import org.junit.jupiter.api.Test;
++import org.junit.jupiter.api.extension.ExtendWith;
++import org.mockito.InjectMocks;
++import org.mockito.Mock;
++import org.mockito.junit.jupiter.MockitoExtension;
++import org.springframework.security.crypto.password.PasswordEncoder;
++import java.util.Optional;
++import static org.assertj.core.api.Assertions.*;
++import static org.mockito.ArgumentMatchers.any;
++import static org.mockito.Mockito.*;
++
++@ExtendWith(MockitoExtension.class)
++class UserServiceTest {
++
++    @Mock UserRepository userRepository;
++    @Mock UserConfigRepository userConfigRepository;
++    @Mock PasswordEncoder passwordEncoder;
++    @Mock EncryptionUtil encryptionUtil;
++    @InjectMocks UserService userService;
++
++    @Test
++    void createUser_savesUserAndDefaultConfig() {
++        when(userRepository.existsByEmail("alice@test.com")).thenReturn(false);
++        when(passwordEncoder.encode("password123")).thenReturn("hashed");
++        User saved = User.builder().id(1L).name("Alice").email("alice@test.com")
++                .passwordHash("hashed").role(UserRole.USER).active(true).build();
++        when(userRepository.save(any())).thenReturn(saved);
++
++        UserResponse result = userService.createUser(
++                new CreateUserRequest("Alice", "alice@test.com", "password123", null));
++
++        assertThat(result.email()).isEqualTo("alice@test.com");
++        assertThat(result.role()).isEqualTo("USER");
++        verify(userConfigRepository).save(any(UserConfig.class));
++    }
++
++    @Test
++    void createUser_throwsWhenEmailExists() {
++        when(userRepository.existsByEmail("alice@test.com")).thenReturn(true);
++        assertThatThrownBy(() -> userService.createUser(
++                new CreateUserRequest("Alice", "alice@test.com", "pw", null)))
++                .isInstanceOf(IllegalArgumentException.class)
++                .hasMessageContaining("already registered");
++    }
++
++    @Test
++    void setUserActive_throwsWhenUserNotFound() {
++        when(userRepository.findById(99L)).thenReturn(Optional.empty());
++        assertThatThrownBy(() -> userService.setUserActive(99L, false))
++                .isInstanceOf(IllegalArgumentException.class);
++    }
++}
+diff --git a/frontend/src/App.tsx b/frontend/src/App.tsx
+new file mode 100644
+index 0000000..7205ce9
+--- /dev/null
++++ b/frontend/src/App.tsx
+@@ -0,0 +1,32 @@
++import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
++import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
++import { AuthProvider } from './contexts/AuthContext'
++import { ProtectedRoute } from './components/ProtectedRoute'
++import { LoginPage } from './pages/LoginPage'
++import { DashboardPage } from './pages/DashboardPage'
++
++const queryClient = new QueryClient()
++
++function AppRoutes() {
++  return (
++    <AuthProvider>
++      <Routes>
++        <Route path="/login" element={<LoginPage />} />
++        <Route element={<ProtectedRoute />}>
++          <Route path="/" element={<DashboardPage />} />
++          <Route path="*" element={<Navigate to="/" replace />} />
++        </Route>
++      </Routes>
++    </AuthProvider>
++  )
++}
++
++export default function App() {
++  return (
++    <QueryClientProvider client={queryClient}>
++      <BrowserRouter>
++        <AppRoutes />
++      </BrowserRouter>
++    </QueryClientProvider>
++  )
++}
+diff --git a/frontend/src/assets/hero.png b/frontend/src/assets/hero.png
+new file mode 100644
+index 0000000..02251f4
+Binary files /dev/null and b/frontend/src/assets/hero.png differ
+diff --git a/frontend/src/assets/react.svg b/frontend/src/assets/react.svg
+new file mode 100644
+index 0000000..6c87de9
+--- /dev/null
++++ b/frontend/src/assets/react.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" aria-hidden="true" role="img" class="iconify iconify--logos" width="35.93" height="32" preserveAspectRatio="xMidYMid meet" viewBox="0 0 256 228"><path fill="#00D8FF" d="M210.483 73.824a171.49 171.49 0 0 0-8.24-2.597c.465-1.9.893-3.777 1.273-5.621c6.238-30.281 2.16-54.676-11.769-62.708c-13.355-7.7-35.196.329-57.254 19.526a171.23 171.23 0 0 0-6.375 5.848a155.866 155.866 0 0 0-4.241-3.917C100.759 3.829 77.587-4.822 63.673 3.233C50.33 10.957 46.379 33.89 51.995 62.588a170.974 170.974 0 0 0 1.892 8.48c-3.28.932-6.445 1.924-9.474 2.98C17.309 83.498 0 98.307 0 113.668c0 15.865 18.582 31.778 46.812 41.427a145.52 145.52 0 0 0 6.921 2.165a167.467 167.467 0 0 0-2.01 9.138c-5.354 28.2-1.173 50.591 12.134 58.266c13.744 7.926 36.812-.22 59.273-19.855a145.567 145.567 0 0 0 5.342-4.923a168.064 168.064 0 0 0 6.92 6.314c21.758 18.722 43.246 26.282 56.54 18.586c13.731-7.949 18.194-32.003 12.4-61.268a145.016 145.016 0 0 0-1.535-6.842c1.62-.48 3.21-.974 4.76-1.488c29.348-9.723 48.443-25.443 48.443-41.52c0-15.417-17.868-30.326-45.517-39.844Zm-6.365 70.984c-1.4.463-2.836.91-4.3 1.345c-3.24-10.257-7.612-21.163-12.963-32.432c5.106-11 9.31-21.767 12.459-31.957c2.619.758 5.16 1.557 7.61 2.4c23.69 8.156 38.14 20.213 38.14 29.504c0 9.896-15.606 22.743-40.946 31.14Zm-10.514 20.834c2.562 12.94 2.927 24.64 1.23 33.787c-1.524 8.219-4.59 13.698-8.382 15.893c-8.067 4.67-25.32-1.4-43.927-17.412a156.726 156.726 0 0 1-6.437-5.87c7.214-7.889 14.423-17.06 21.459-27.246c12.376-1.098 24.068-2.894 34.671-5.345a134.17 134.17 0 0 1 1.386 6.193ZM87.276 214.515c-7.882 2.783-14.16 2.863-17.955.675c-8.075-4.657-11.432-22.636-6.853-46.752a156.923 156.923 0 0 1 1.869-8.499c10.486 2.32 22.093 3.988 34.498 4.994c7.084 9.967 14.501 19.128 21.976 27.15a134.668 134.668 0 0 1-4.877 4.492c-9.933 8.682-19.886 14.842-28.658 17.94ZM50.35 144.747c-12.483-4.267-22.792-9.812-29.858-15.863c-6.35-5.437-9.555-10.836-9.555-15.216c0-9.322 13.897-21.212 37.076-29.293c2.813-.98 5.757-1.905 8.812-2.773c3.204 10.42 7.406 21.315 12.477 32.332c-5.137 11.18-9.399 22.249-12.634 32.792a134.718 134.718 0 0 1-6.318-1.979Zm12.378-84.26c-4.811-24.587-1.616-43.134 6.425-47.789c8.564-4.958 27.502 2.111 47.463 19.835a144.318 144.318 0 0 1 3.841 3.545c-7.438 7.987-14.787 17.08-21.808 26.988c-12.04 1.116-23.565 2.908-34.161 5.309a160.342 160.342 0 0 1-1.76-7.887Zm110.427 27.268a347.8 347.8 0 0 0-7.785-12.803c8.168 1.033 15.994 2.404 23.343 4.08c-2.206 7.072-4.956 14.465-8.193 22.045a381.151 381.151 0 0 0-7.365-13.322Zm-45.032-43.861c5.044 5.465 10.096 11.566 15.065 18.186a322.04 322.04 0 0 0-30.257-.006c4.974-6.559 10.069-12.652 15.192-18.18ZM82.802 87.83a323.167 323.167 0 0 0-7.227 13.238c-3.184-7.553-5.909-14.98-8.134-22.152c7.304-1.634 15.093-2.97 23.209-3.984a321.524 321.524 0 0 0-7.848 12.897Zm8.081 65.352c-8.385-.936-16.291-2.203-23.593-3.793c2.26-7.3 5.045-14.885 8.298-22.6a321.187 321.187 0 0 0 7.257 13.246c2.594 4.48 5.28 8.868 8.038 13.147Zm37.542 31.03c-5.184-5.592-10.354-11.779-15.403-18.433c4.902.192 9.899.29 14.978.29c5.218 0 10.376-.117 15.453-.343c-4.985 6.774-10.018 12.97-15.028 18.486Zm52.198-57.817c3.422 7.8 6.306 15.345 8.596 22.52c-7.422 1.694-15.436 3.058-23.88 4.071a382.417 382.417 0 0 0 7.859-13.026a347.403 347.403 0 0 0 7.425-13.565Zm-16.898 8.101a358.557 358.557 0 0 1-12.281 19.815a329.4 329.4 0 0 1-23.444.823c-7.967 0-15.716-.248-23.178-.732a310.202 310.202 0 0 1-12.513-19.846h.001a307.41 307.41 0 0 1-10.923-20.627a310.278 310.278 0 0 1 10.89-20.637l-.001.001a307.318 307.318 0 0 1 12.413-19.761c7.613-.576 15.42-.876 23.31-.876H128c7.926 0 15.743.303 23.354.883a329.357 329.357 0 0 1 12.335 19.695a358.489 358.489 0 0 1 11.036 20.54a329.472 329.472 0 0 1-11 20.722Zm22.56-122.124c8.572 4.944 11.906 24.881 6.52 51.026c-.344 1.668-.73 3.367-1.15 5.09c-10.622-2.452-22.155-4.275-34.23-5.408c-7.034-10.017-14.323-19.124-21.64-27.008a160.789 160.789 0 0 1 5.888-5.4c18.9-16.447 36.564-22.941 44.612-18.3ZM128 90.808c12.625 0 22.86 10.235 22.86 22.86s-10.235 22.86-22.86 22.86s-22.86-10.235-22.86-22.86s10.235-22.86 22.86-22.86Z"></path></svg>
+\ No newline at end of file
+diff --git a/frontend/src/assets/vite.svg b/frontend/src/assets/vite.svg
+new file mode 100644
+index 0000000..5101b67
+--- /dev/null
++++ b/frontend/src/assets/vite.svg
+@@ -0,0 +1 @@
++<svg xmlns="http://www.w3.org/2000/svg" width="77" height="47" fill="none" aria-labelledby="vite-logo-title" viewBox="0 0 77 47"><title id="vite-logo-title">Vite</title><style>.parenthesis{fill:#000}@media (prefers-color-scheme:dark){.parenthesis{fill:#fff}}</style><path fill="#9135ff" d="M40.151 45.71c-.663.844-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.493c-.92 0-1.457-1.04-.92-1.788l7.479-10.471c1.07-1.498 0-3.578-1.842-3.578H15.443c-.92 0-1.456-1.04-.92-1.788l9.696-13.576c.213-.297.556-.474.92-.474h28.894c.92 0 1.456 1.04.92 1.788l-7.48 10.472c-1.07 1.497 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.087.89 1.83L40.153 45.712z"/><mask id="a" width="48" height="47" x="14" y="0" maskUnits="userSpaceOnUse" style="mask-type:alpha"><path fill="#000" d="M40.047 45.71c-.663.843-2.02.374-2.02-.699V34.708a2.26 2.26 0 0 0-2.262-2.262H24.389c-.92 0-1.457-1.04-.92-1.788l7.479-10.472c1.07-1.497 0-3.578-1.842-3.578H15.34c-.92 0-1.456-1.04-.92-1.788l9.696-13.575c.213-.297.556-.474.92-.474H53.93c.92 0 1.456 1.04.92 1.788L47.37 13.03c-1.07 1.498 0 3.578 1.842 3.578h11.376c.944 0 1.474 1.088.89 1.831L40.049 45.712z"/></mask><g mask="url(#a)"><g filter="url(#b)"><ellipse cx="5.508" cy="14.704" fill="#eee6ff" rx="5.508" ry="14.704" transform="rotate(269.814 20.96 11.29)scale(-1 1)"/></g><g filter="url(#c)"><ellipse cx="10.399" cy="29.851" fill="#eee6ff" rx="10.399" ry="29.851" transform="rotate(89.814 -16.902 -8.275)scale(1 -1)"/></g><g filter="url(#d)"><ellipse cx="5.508" cy="30.487" fill="#8900ff" rx="5.508" ry="30.487" transform="rotate(89.814 -19.197 -7.127)scale(1 -1)"/></g><g filter="url(#e)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.928 4.177)scale(1 -1)"/></g><g filter="url(#f)"><ellipse cx="5.508" cy="30.599" fill="#8900ff" rx="5.508" ry="30.599" transform="rotate(89.814 -25.738 5.52)scale(1 -1)"/></g><g filter="url(#g)"><ellipse cx="14.072" cy="22.078" fill="#eee6ff" rx="14.072" ry="22.078" transform="rotate(93.35 31.245 55.578)scale(-1 1)"/></g><g filter="url(#h)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#i)"><ellipse cx="3.47" cy="21.501" fill="#8900ff" rx="3.47" ry="21.501" transform="rotate(89.009 35.419 55.202)scale(-1 1)"/></g><g filter="url(#j)"><ellipse cx="14.592" cy="9.743" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(39.51 14.592 9.743)"/></g><g filter="url(#k)"><ellipse cx="61.728" cy="-5.321" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 61.728 -5.32)"/></g><g filter="url(#l)"><ellipse cx="55.618" cy="7.104" fill="#00c2ff" rx="5.971" ry="9.665" transform="rotate(37.892 55.618 7.104)"/></g><g filter="url(#m)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#n)"><ellipse cx="12.326" cy="39.103" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 12.326 39.103)"/></g><g filter="url(#o)"><ellipse cx="49.857" cy="30.678" fill="#8900ff" rx="4.407" ry="29.108" transform="rotate(37.892 49.857 30.678)"/></g><g filter="url(#p)"><ellipse cx="52.623" cy="33.171" fill="#00c2ff" rx="5.971" ry="15.297" transform="rotate(37.892 52.623 33.17)"/></g></g><path d="M6.919 0c-9.198 13.166-9.252 33.575 0 46.789h6.215c-9.25-13.214-9.196-33.623 0-46.789zm62.424 0h-6.215c9.198 13.166 9.252 33.575 0 46.789h6.215c9.25-13.214 9.196-33.623 0-46.789" class="parenthesis"/><defs><filter id="b" width="60.045" height="41.654" x="-5.564" y="16.92" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="c" width="90.34" height="51.437" x="-40.407" y="-6.762" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="d" width="79.355" height="29.4" x="-35.435" y="2.801" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="e" width="79.579" height="29.4" x="-30.84" y="20.8" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="f" width="79.579" height="29.4" x="-29.307" y="21.949" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="g" width="74.749" height="58.852" x="29.961" y="-17.13" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="7.659"/></filter><filter id="h" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="i" width="61.377" height="25.362" x="37.754" y="3.055" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="j" width="56.045" height="63.649" x="-13.43" y="-22.082" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="k" width="54.814" height="64.646" x="34.321" y="-37.644" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="l" width="33.541" height="35.313" x="38.847" y="-10.552" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="m" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="n" width="54.814" height="64.646" x="-15.081" y="6.78" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="o" width="54.814" height="64.646" x="22.45" y="-1.645" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter><filter id="p" width="39.409" height="43.623" x="32.919" y="11.36" color-interpolation-filters="sRGB" filterUnits="userSpaceOnUse"><feFlood flood-opacity="0" result="BackgroundImageFix"/><feBlend in="SourceGraphic" in2="BackgroundImageFix" result="shape"/><feGaussianBlur result="effect1_foregroundBlur_2002_17286" stdDeviation="4.596"/></filter></defs></svg>
+diff --git a/frontend/src/components/ProtectedRoute.tsx b/frontend/src/components/ProtectedRoute.tsx
+new file mode 100644
+index 0000000..9d34a9e
+--- /dev/null
++++ b/frontend/src/components/ProtectedRoute.tsx
+@@ -0,0 +1,11 @@
++import { Navigate, Outlet } from 'react-router-dom'
++import { useAuth } from '../contexts/AuthContext'
++
++export function ProtectedRoute() {
++  const { user, isLoading } = useAuth()
++  if (isLoading) return (
++    <div className="flex h-screen items-center justify-center text-gray-500">Loading...</div>
++  )
++  if (!user) return <Navigate to="/login" replace />
++  return <Outlet />
++}
+diff --git a/frontend/src/contexts/AuthContext.tsx b/frontend/src/contexts/AuthContext.tsx
+new file mode 100644
+index 0000000..7281e43
+--- /dev/null
++++ b/frontend/src/contexts/AuthContext.tsx
+@@ -0,0 +1,36 @@
++import { createContext, useContext } from 'react'
++import type { ReactNode } from 'react'
++import { useQuery, useQueryClient } from '@tanstack/react-query'
++import { useNavigate } from 'react-router-dom'
++import api from '../lib/api'
++
++interface User { id: number; name: string; email: string; role: string; active: boolean }
++interface AuthCtx { user: User | null; isLoading: boolean; logout: () => Promise<void> }
++
++const AuthContext = createContext<AuthCtx>({ user: null, isLoading: true, logout: () => Promise.resolve() })
++
++export function AuthProvider({ children }: { children: ReactNode }) {
++  const queryClient = useQueryClient()
++  const navigate = useNavigate()
++
++  const { data: user, isLoading } = useQuery<User>({
++    queryKey: ['me'],
++    queryFn: () => api.get('/users/me').then(r => r.data.data),
++    retry: false,
++    staleTime: 5 * 60 * 1000,
++  })
++
++  const logout = async () => {
++    await api.delete('/auth/logout').catch(() => {})
++    queryClient.clear()
++    navigate('/login')
++  }
++
++  return (
++    <AuthContext.Provider value={{ user: user ?? null, isLoading, logout }}>
++      {children}
++    </AuthContext.Provider>
++  )
++}
++
++export const useAuth = () => useContext(AuthContext)
+diff --git a/frontend/src/index.css b/frontend/src/index.css
+new file mode 100644
+index 0000000..b5c61c9
+--- /dev/null
++++ b/frontend/src/index.css
+@@ -0,0 +1,3 @@
++@tailwind base;
++@tailwind components;
++@tailwind utilities;
+diff --git a/frontend/src/lib/api.ts b/frontend/src/lib/api.ts
+new file mode 100644
+index 0000000..69a5228
+--- /dev/null
++++ b/frontend/src/lib/api.ts
+@@ -0,0 +1,18 @@
++import axios from 'axios'
++
++const api = axios.create({
++  baseURL: '/api',
++  withCredentials: true,
++})
++
++api.interceptors.response.use(
++  (res) => res,
++  (error) => {
++    if (error.response?.status === 401 && window.location.pathname !== '/login') {
++      window.location.href = '/login'
++    }
++    return Promise.reject(error)
++  }
++)
++
++export default api
+diff --git a/frontend/src/main.tsx b/frontend/src/main.tsx
+new file mode 100644
+index 0000000..520b520
+--- /dev/null
++++ b/frontend/src/main.tsx
+@@ -0,0 +1,10 @@
++import { StrictMode } from 'react'
++import { createRoot } from 'react-dom/client'
++import './index.css'
++import App from './App'
++
++createRoot(document.getElementById('root')!).render(
++  <StrictMode>
++    <App />
++  </StrictMode>
++)
+diff --git a/frontend/src/pages/DashboardPage.tsx b/frontend/src/pages/DashboardPage.tsx
+new file mode 100644
+index 0000000..f2a3ee7
+--- /dev/null
++++ b/frontend/src/pages/DashboardPage.tsx
+@@ -0,0 +1,17 @@
++import { useAuth } from '../contexts/AuthContext'
++
++export function DashboardPage() {
++  const { user, logout } = useAuth()
++  return (
++    <div className="min-h-screen bg-gray-50 p-8">
++      <div className="flex items-center justify-between">
++        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
++        <button onClick={logout}
++          className="rounded-lg border border-gray-300 px-4 py-2 text-sm hover:bg-gray-100">
++          Sign Out
++        </button>
++      </div>
++      <p className="mt-4 text-gray-600">Welcome, {user?.name}. More features coming in Phase 6.</p>
++    </div>
++  )
++}
+diff --git a/frontend/src/pages/LoginPage.tsx b/frontend/src/pages/LoginPage.tsx
+new file mode 100644
+index 0000000..cac1fc5
+--- /dev/null
++++ b/frontend/src/pages/LoginPage.tsx
+@@ -0,0 +1,64 @@
++import { useState } from 'react'
++import type { FormEvent } from 'react'
++import { Navigate, useNavigate } from 'react-router-dom'
++import { useQueryClient } from '@tanstack/react-query'
++import { useAuth } from '../contexts/AuthContext'
++import api from '../lib/api'
++
++export function LoginPage() {
++  const { user } = useAuth()
++  const navigate = useNavigate()
++  const queryClient = useQueryClient()
++  const [error, setError] = useState('')
++  const [loading, setLoading] = useState(false)
++
++  if (user) return <Navigate to="/" replace />
++
++  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
++    e.preventDefault()
++    setError('')
++    setLoading(true)
++    const form = new FormData(e.currentTarget)
++    try {
++      await api.post('/auth/login', {
++        email: form.get('email') as string,
++        password: form.get('password') as string,
++      })
++      await queryClient.invalidateQueries({ queryKey: ['me'] })
++      navigate('/')
++    } catch {
++      setError('Invalid email or password')
++    } finally {
++      setLoading(false)
++    }
++  }
++
++  return (
++    <div className="flex min-h-screen items-center justify-center bg-gray-50">
++      <div className="w-full max-w-sm rounded-xl bg-white p-8 shadow-md">
++        <h1 className="mb-2 text-2xl font-bold text-gray-900">Trading System</h1>
++        <p className="mb-6 text-sm text-gray-500">Sign in to your account</p>
++        <form onSubmit={handleSubmit} className="space-y-4">
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Email</label>
++            <input name="email" type="email" required autoFocus
++              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
++                         focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
++          </div>
++          <div>
++            <label className="block text-sm font-medium text-gray-700">Password</label>
++            <input name="password" type="password" required
++              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm
++                         focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500" />
++          </div>
++          {error && <p className="text-sm text-red-600">{error}</p>}
++          <button type="submit" disabled={loading}
++            className="w-full rounded-lg bg-blue-600 py-2 text-sm font-semibold text-white
++                       hover:bg-blue-700 disabled:opacity-60">
++            {loading ? 'Signing in...' : 'Sign In'}
++          </button>
++        </form>
++      </div>
++    </div>
++  )
++}

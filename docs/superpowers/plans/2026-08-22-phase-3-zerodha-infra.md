@@ -6,12 +6,12 @@
 
 ## Tasks
 
-- [ ] Task 1: Zerodha OAuth flow (Connect button → callback → token exchange)
-- [ ] Task 2: NSE instrument cache + symbol validation
-- [ ] Task 3: Daily scheduler jobs (re-login reminder + daily P&L summary)
-- [ ] Task 4: Telegram bot commands (/portfolio /signals /summary /status)
-- [ ] Task 5: Production infrastructure (Docker, Nginx, CI/CD, .env.example)
-- [ ] Task 6: Frontend — Zerodha connect flow + callback page
+- [x] Task 1: Zerodha OAuth flow (Connect button → callback → token exchange)
+- [x] Task 2: NSE instrument cache + symbol validation
+- [x] Task 3: Daily scheduler jobs (re-login reminder + daily P&L summary)
+- [x] Task 4: Telegram bot commands (/portfolio /signals /summary /status)
+- [x] Task 5: Production infrastructure (Docker, Nginx, CI/CD, .env.example)
+- [x] Task 6: Frontend — Zerodha connect flow + callback page
 
 ## Task 1: Zerodha OAuth Flow
 

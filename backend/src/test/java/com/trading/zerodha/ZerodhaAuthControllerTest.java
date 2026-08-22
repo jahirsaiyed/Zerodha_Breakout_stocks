@@ -49,6 +49,20 @@ class ZerodhaAuthControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("GET /api/zerodha/login redirects to error page when initiation fails")
+    void login_initiationFails_redirectsToError() throws Exception {
+        when(portfolioDbService.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(zerodhaAuthService.initiate(1L)).thenThrow(new IllegalStateException("API key not configured"));
+        when(zerodhaProperties.getFrontendUrl()).thenReturn("http://localhost:5173");
+
+        mockMvc.perform(get("/api/zerodha/login"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location",
+                        "http://localhost:5173/settings?zerodha=error&reason=init_failed"));
+    }
+
+    @Test
     @DisplayName("GET /api/zerodha/login requires authentication")
     void login_unauthenticated_returns403() throws Exception {
         mockMvc.perform(get("/api/zerodha/login"))

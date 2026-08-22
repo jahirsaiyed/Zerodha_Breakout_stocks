@@ -39,7 +39,7 @@ class DailySchedulerTest {
     @BeforeEach
     void setUp() {
         user = User.builder().id(1L).email("alice@test.com").name("Alice").passwordHash("x").build();
-        config = UserConfig.builder().user(user).zerodhaApiKey("key123").build();
+        config = UserConfig.builder().user(user).build();
     }
 
     // ── sendReloginReminders ──────────────────────────────────────────────────
@@ -54,17 +54,6 @@ class DailySchedulerTest {
         scheduler.sendReloginReminders();
 
         verify(notificationService).notifyUser(eq(1L), contains("re-connect"));
-    }
-
-    @Test
-    @DisplayName("sendReloginReminders skips users without API key configured")
-    void sendReloginReminders_noApiKey_skips() {
-        config.setZerodhaApiKey(null);
-        when(userConfigRepository.findAll()).thenReturn(List.of(config));
-
-        scheduler.sendReloginReminders();
-
-        verify(notificationService, never()).notifyUser(anyLong(), anyString());
     }
 
     @Test

@@ -30,8 +30,6 @@ public class UserConfig {
 
     @Builder.Default
     @Column(name = "order_expiry_days", nullable = false) private Integer orderExpiryDays = 5;
-    @Column(name = "zerodha_api_key") private String zerodhaApiKey;
-    @Column(name = "zerodha_api_secret") private String zerodhaApiSecret;     // stored encrypted
     @Column(name = "zerodha_access_token") private String zerodhaAccessToken; // stored encrypted
     @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
     @Column(name = "telegram_chat_id") private String telegramChatId;

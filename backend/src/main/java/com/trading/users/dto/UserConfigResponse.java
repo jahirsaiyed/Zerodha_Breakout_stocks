@@ -9,6 +9,5 @@ public record UserConfigResponse(
     Integer orderExpiryDays,
     String telegramChatId,
     Boolean zerodhaConnected,
-    String zerodhaApiKey,
     Boolean hasTotpSecret
 ) {}

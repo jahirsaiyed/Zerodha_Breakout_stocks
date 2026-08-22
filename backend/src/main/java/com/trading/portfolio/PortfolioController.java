@@ -14,8 +14,7 @@ import com.trading.users.UserConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.annotation.AuthenticationPrincipal;
-import org.springframework.security.core.userdetails.UserDetails;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import org.springframework.data.domain.PageRequest;
@@ -43,10 +42,10 @@ public class PortfolioController {
      */
     @GetMapping("/positions")
     public List<PositionResponse> getPositions(
-            @AuthenticationPrincipal UserDetails principal,
+            Authentication auth,
             @RequestParam(required = false) PositionStatus status) {
 
-        Long userId = resolveUserId(principal);
+        Long userId = resolveUserId(auth);
         List<Position> positions = (status == null)
                 ? db.getAllPositionsForUser(userId)
                 : db.getPositionsByStatus(userId, status);
@@ -61,9 +60,9 @@ public class PortfolioController {
     @PostMapping("/positions/{id}/exit")
     public ResponseEntity<PositionResponse> manualExit(
             @PathVariable Long id,
-            @AuthenticationPrincipal UserDetails principal) {
+            Authentication auth) {
 
-        Long userId = resolveUserId(principal);
+        Long userId = resolveUserId(auth);
 
         // Ownership check — only the owning user can exit their position
         List<Position> active = db.getActivePositions();
@@ -90,10 +89,9 @@ public class PortfolioController {
      * Falls back gracefully (ltp = null) when Zerodha is not connected.
      */
     @GetMapping("/positions/live")
-    public List<LivePositionResponse> getLivePositions(
-            @AuthenticationPrincipal UserDetails principal) {
+    public List<LivePositionResponse> getLivePositions(Authentication auth) {
 
-        Long userId = resolveUserId(principal);
+        Long userId = resolveUserId(auth);
         List<Position> active = db.getPositionsByStatus(userId, PositionStatus.ACTIVE);
 
         if (active.isEmpty()) return List.of();
@@ -113,10 +111,10 @@ public class PortfolioController {
      */
     @GetMapping("/orders")
     public List<OrderResponse> getOrders(
-            @AuthenticationPrincipal UserDetails principal,
+            Authentication auth,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
-        Long userId = resolveUserId(principal);
+        Long userId = resolveUserId(auth);
         return orderRepository.findByUserIdOrderByPlacedAtDesc(userId, PageRequest.of(page, size))
                 .getContent()
                 .stream()
@@ -140,9 +138,7 @@ public class PortfolioController {
         }
     }
 
-    private Long resolveUserId(UserDetails principal) {
-        // The username stored in JWT subject is the user's email; we need the numeric ID.
-        // PortfolioDbService exposes a helper via UserConfigRepository.
-        return db.getUserIdByEmail(principal.getUsername());
+    private Long resolveUserId(Authentication auth) {
+        return db.getUserIdByEmail(auth.getName());
     }
 }

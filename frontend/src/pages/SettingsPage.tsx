@@ -39,8 +39,6 @@ export function SettingsPage() {
     positionSizingValue: '10000',
     orderExpiryDays: '5',
     telegramChatId: '',
-    zerodhaApiKey: '',
-    zerodhaApiSecret: '',
     zerodhaTotpSecret: '',
   })
 
@@ -52,8 +50,6 @@ export function SettingsPage() {
         positionSizingValue: String(config.positionSizingValue),
         orderExpiryDays: String(config.orderExpiryDays),
         telegramChatId: config.telegramChatId ?? '',
-        zerodhaApiKey: config.zerodhaApiKey ?? '',
-        zerodhaApiSecret: '',
         zerodhaTotpSecret: '',
       })
     }
@@ -68,9 +64,12 @@ export function SettingsPage() {
       setSearchParams({}, { replace: true })
     } else if (zerodha === 'error') {
       const reason = searchParams.get('reason')
-      setZerodhaMsg({ type: 'error', text: reason === 'session_expired'
+      const text = reason === 'session_expired'
         ? 'Connection timed out — please try again.'
-        : 'Zerodha connection failed. Check your API key and try again.' })
+        : reason === 'init_failed'
+        ? 'Could not start Zerodha login. Contact the administrator.'
+        : 'Zerodha connection failed. Please try again or contact the administrator.'
+      setZerodhaMsg({ type: 'error', text })
       setSearchParams({}, { replace: true })
     }
   }, [searchParams, setSearchParams, qc])
@@ -85,8 +84,6 @@ export function SettingsPage() {
       positionSizingValue: Number(form.positionSizingValue),
       orderExpiryDays: Number(form.orderExpiryDays),
       telegramChatId: form.telegramChatId || null,
-      zerodhaApiKey: form.zerodhaApiKey || null,
-      zerodhaApiSecret: form.zerodhaApiSecret || null,
       zerodhaTotpSecret: form.zerodhaTotpSecret || null,
     }),
     onSuccess: () => {
@@ -214,14 +211,6 @@ export function SettingsPage() {
             }`}>{zerodhaMsg.text}</p>
           )}
           <div className="grid grid-cols-2 gap-4">
-            <Field label="API Key" hint="Obtain from kite.trade developer console">
-              <input type="text" value={form.zerodhaApiKey} onChange={set('zerodhaApiKey')}
-                placeholder="Enter Zerodha API key" className={inputCls} />
-            </Field>
-            <Field label="API Secret" hint="Leave blank to keep current secret">
-              <input type="password" value={form.zerodhaApiSecret} onChange={set('zerodhaApiSecret')}
-                placeholder="Enter to update secret" className={inputCls} />
-            </Field>
             <Field label="TOTP Secret (optional)"
               hint={config?.hasTotpSecret
                 ? 'TOTP secret saved. Enter to replace, or leave blank.'

@@ -49,13 +49,14 @@ public class ZerodhaAuthService {
      */
     @Transactional(readOnly = true)
     public OAuthInitResult initiate(Long userId) {
-        UserConfig config = userConfigRepository.findByUser_Id(userId)
+        // Verify the user has a config row (creates a scoped check without per-user API key)
+        userConfigRepository.findByUser_Id(userId)
                 .orElseThrow(() -> new IllegalStateException("No user config for userId=" + userId));
 
-        String apiKey = config.getZerodhaApiKey();
+        String apiKey = props.getApiKey();
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalStateException(
-                    "Configure your Zerodha API key in Settings before connecting.");
+                    "Zerodha API key is not configured on the server. Contact the administrator.");
         }
 
         String nonce = UUID.randomUUID().toString();
@@ -86,14 +87,14 @@ public class ZerodhaAuthService {
         UserConfig config = userConfigRepository.findByUser_Id(state.userId())
                 .orElseThrow(() -> new IllegalStateException("User config not found for userId=" + state.userId()));
 
-        String apiKey       = config.getZerodhaApiKey();
-        String encApiSecret = config.getZerodhaApiSecret();
-        if (encApiSecret == null || encApiSecret.isBlank()) {
-            throw new IllegalStateException("Zerodha API secret is not configured for this user.");
+        String apiKey    = props.getApiKey();
+        String apiSecret = props.getApiSecret();
+        if (apiKey == null || apiKey.isBlank() || apiSecret == null || apiSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "Zerodha API credentials are not configured on the server. Contact the administrator.");
         }
 
-        String apiSecret    = encryptionUtil.decrypt(encApiSecret);
-        String accessToken  = brokerAdapterFactory.exchangeToken(apiKey, apiSecret, requestToken);
+        String accessToken = brokerAdapterFactory.exchangeToken(apiKey, apiSecret, requestToken);
 
         config.setZerodhaAccessToken(encryptionUtil.encrypt(accessToken));
         config.setZerodhaConnected(true);
