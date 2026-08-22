@@ -88,9 +88,15 @@ jobs:
 
     steps:
       - name: Trigger Render deploy hook
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
         run: |
+          if [ -z "$RENDER_DEPLOY_HOOK_URL" ]; then
+            echo "RENDER_DEPLOY_HOOK_URL not set — skipping Render deploy"
+            exit 0
+          fi
           curl -fsSL --retry 3 \
-            "${{ secrets.RENDER_DEPLOY_HOOK_URL }}" \
+            "$RENDER_DEPLOY_HOOK_URL" \
             -o /dev/null -w "HTTP %{http_code}\n"
 
   deploy-frontend:
@@ -115,7 +121,13 @@ jobs:
 
       - name: Deploy to Vercel (production)
         working-directory: frontend
-        run: npx vercel --prod --yes --token "${{ secrets.VERCEL_TOKEN }}"
         env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          if [ -z "$VERCEL_TOKEN" ]; then
+            echo "VERCEL_TOKEN not set — skipping Vercel deploy"
+            exit 0
+          fi
+          npx vercel --prod --yes --token "$VERCEL_TOKEN"
