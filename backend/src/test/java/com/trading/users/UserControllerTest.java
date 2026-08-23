@@ -2,7 +2,9 @@ package com.trading.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.auth.JwtUtil;
+import com.trading.broker.BrokerAdapterFactory;
 import com.trading.notifications.NotificationService;
+import com.trading.portfolio.PortfolioDbService;
 import com.trading.users.dto.UserResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,6 +35,8 @@ class UserControllerTest {
 
     @MockBean UserService userService;
     @MockBean NotificationService notificationService;
+    @MockBean BrokerAdapterFactory brokerAdapterFactory;
+    @MockBean PortfolioDbService portfolioDbService;
     @MockBean JwtUtil jwtUtil;
 
     // ── POST /me/password ─────────────────────────────────────────────────────
