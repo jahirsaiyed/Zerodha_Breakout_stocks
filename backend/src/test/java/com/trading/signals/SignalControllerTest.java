@@ -1,10 +1,13 @@
 package com.trading.signals;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trading.broker.BrokerAdapterFactory;
+import com.trading.portfolio.SignalScoringService;
 import com.trading.signals.dto.CreateSignalRequest;
 import com.trading.signals.dto.SignalResponse;
 import com.trading.signals.dto.SyncLogResponse;
 import com.trading.signals.dto.UpdateSignalRequest;
+import com.trading.users.UserConfigRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -39,6 +43,9 @@ class SignalControllerTest {
 
     @MockBean SignalService signalService;
     @MockBean SheetSyncService sheetSyncService;
+    @MockBean UserConfigRepository userConfigRepository;
+    @MockBean BrokerAdapterFactory brokerAdapterFactory;
+    @MockBean SignalScoringService scoringService;
     @MockBean com.trading.auth.JwtUtil jwtUtil;
 
     private static final SignalResponse SAMPLE = new SignalResponse(
@@ -170,6 +177,37 @@ class SignalControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.added").value(1));
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/signals/quotes returns empty list when no active signals")
+    void quotes_noActiveSignals_returnsEmpty() throws Exception {
+        when(signalService.findActiveSignals()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/signals/quotes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data").isEmpty());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/signals/quotes returns null ltp when user has no Zerodha connection")
+    void quotes_noZerodhaConnection_returnsNullLtp() throws Exception {
+        Signal sig = Signal.builder()
+                .symbol("RELIANCE").entryPrice(new BigDecimal("100"))
+                .stopLoss(new BigDecimal("90")).target(new BigDecimal("120"))
+                .riskRewardRatio(new BigDecimal("2.0000"))
+                .source(SignalSource.MANUAL).status(SignalStatus.ACTIVE).build();
+        when(signalService.findActiveSignals()).thenReturn(List.of(sig));
+        when(userConfigRepository.findByUser_Email(any())).thenReturn(Optional.empty());
+        when(scoringService.rank(any(), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/signals/quotes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].ltp").doesNotExist());
     }
 
     @Test

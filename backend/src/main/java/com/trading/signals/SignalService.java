@@ -27,6 +27,11 @@ public class SignalService {
     private final InstrumentCacheService instrumentCacheService;
 
     @Transactional(readOnly = true)
+    public List<Signal> findActiveSignals() {
+        return signalRepository.findByStatus(SignalStatus.ACTIVE);
+    }
+
+    @Transactional(readOnly = true)
     public List<SignalResponse> list(SignalStatus status) {
         List<Signal> signals = (status == null)
                 ? signalRepository.findAll()
