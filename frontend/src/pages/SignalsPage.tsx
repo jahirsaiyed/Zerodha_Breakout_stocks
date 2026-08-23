@@ -2,12 +2,20 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Signal } from '../lib/types'
+import type { Signal, SignalQuote } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
 
 const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', notes: '' }
 
 type EditState = { id: number; entryPrice: string; stopLoss: string; target: string; notes: string }
+
+
+function diffBg(diff: number | null): string {
+  if (diff === null) return ''
+  if (diff < 0) return 'bg-red-50 text-red-600'
+  if (diff < 5) return 'bg-amber-50 text-amber-700'
+  return 'bg-emerald-50 text-emerald-700'
+}
 
 export function SignalsPage() {
   const qc = useQueryClient()
@@ -23,6 +31,14 @@ export function SignalsPage() {
     queryFn: () => api.get('/signals').then(r => r.data.data),
   })
 
+  const { data: quotes = [] } = useQuery<SignalQuote[]>({
+    queryKey: ['signals-quotes'],
+    queryFn: () => api.get('/signals/quotes').then(r => r.data.data),
+    refetchInterval: 60_000,
+  })
+
+  const quotesMap = new Map<number, SignalQuote>(quotes.map(q => [q.signalId, q]))
+
   const create = useMutation({
     mutationFn: (body: typeof EMPTY) => api.post('/signals', {
       symbol: body.symbol.toUpperCase().trim(),
@@ -33,6 +49,7 @@ export function SignalsPage() {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['signals'] })
+      qc.invalidateQueries({ queryKey: ['signals-quotes'] })
       setShowForm(false)
       setForm(EMPTY)
       setFormError('')
@@ -49,6 +66,7 @@ export function SignalsPage() {
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['signals'] })
+      qc.invalidateQueries({ queryKey: ['signals-quotes'] })
       setEditState(null)
       setEditError('')
     },
@@ -64,6 +82,7 @@ export function SignalsPage() {
     mutationFn: () => api.post('/signals/sync'),
     onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ['signals'] })
+      qc.invalidateQueries({ queryKey: ['signals-quotes'] })
       const d = res.data.data
       setSyncResult({ added: d.signalsAdded, modified: d.signalsModified, removed: d.signalsRemoved })
       setTimeout(() => setSyncResult(null), 8000)
@@ -175,7 +194,7 @@ export function SignalsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
-                {['Symbol','Entry','Stop Loss','Target','R:R','Source','Status','Added',''].map(h => (
+                {['#','Symbol','Entry','Stop Loss','Target','R:R','LTP','vs Entry','Source','Status',''].map(h => (
                   <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
                 ))}
               </tr>
@@ -183,10 +202,12 @@ export function SignalsPage() {
             <tbody>
               {[...active, ...others].map(sig => {
                 const isEditing = editState?.id === sig.id
+                const q = quotesMap.get(sig.id)
 
                 if (isEditing && editState) {
                   return (
                     <tr key={sig.id} className="border-b border-indigo-50 bg-indigo-50/30">
+                      <td className="px-5 py-2 text-gray-400">—</td>
                       <td className="px-5 py-2 font-medium text-gray-900">{sig.symbol}</td>
                       <td className="px-5 py-2">
                         <input value={editState.entryPrice} onChange={setEdit('entryPrice')} className={inputCls} />
@@ -198,18 +219,18 @@ export function SignalsPage() {
                         <input value={editState.target} onChange={setEdit('target')} className={inputCls} />
                       </td>
                       <td className="px-5 py-2 text-gray-400">—</td>
+                      <td className="px-5 py-2 text-gray-400">—</td>
+                      <td className="px-5 py-2 text-gray-400">—</td>
                       <td className="px-5 py-2">
                         <Badge label={sig.source === 'MANUAL' ? 'Manual' : 'Sheet'} variant={sig.source === 'MANUAL' ? 'indigo' : 'blue'} />
                       </td>
                       <td className="px-5 py-2">
                         <Badge label={statusLabel(sig.status)} variant={statusVariant(sig.status)} />
                       </td>
-                      <td className="px-5 py-2 text-xs text-gray-400">
-                        <input value={editState.notes} onChange={setEdit('notes')} placeholder="Notes"
-                          className={inputCls} />
-                      </td>
                       <td className="px-5 py-2">
                         <div className="flex flex-col gap-1">
+                          <input value={editState.notes} onChange={setEdit('notes')} placeholder="Notes"
+                            className={inputCls} />
                           {editError && <p className="text-xs text-red-600">{editError}</p>}
                           <div className="flex gap-2">
                             <button onClick={() => update.mutate(editState)}
@@ -231,19 +252,42 @@ export function SignalsPage() {
 
                 return (
                   <tr key={sig.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                    <td className="px-5 py-3.5 font-medium text-gray-900">{sig.symbol}</td>
+                    {/* Rank */}
+                    <td className="px-5 py-3.5 text-xs font-medium text-gray-400">
+                      {sig.status === 'ACTIVE' && q?.rank != null
+                        ? <span className="inline-flex h-5 w-5 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 font-semibold">{q.rank}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    {/* Symbol + date */}
+                    <td className="px-5 py-3.5">
+                      <span className="font-medium text-gray-900">{sig.symbol}</span>
+                      <span className="mt-0.5 block text-xs text-gray-400">
+                        {new Date(sig.addedAt).toLocaleDateString('en-IN')}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.entryPrice).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.stopLoss).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.target).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.riskRewardRatio).toFixed(2)}x</td>
+                    {/* LTP */}
+                    <td className="px-5 py-3.5">
+                      {sig.status === 'ACTIVE' && q?.ltp != null
+                        ? <span className="font-medium text-gray-800">{Number(q.ltp).toFixed(2)}</span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
+                    {/* Diff from entry */}
+                    <td className="px-5 py-3.5">
+                      {sig.status === 'ACTIVE' && q?.diffFromEntryPct != null
+                        ? <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${diffBg(q.diffFromEntryPct)}`}>
+                            {q.diffFromEntryPct > 0 ? '+' : ''}{Number(q.diffFromEntryPct).toFixed(2)}%
+                          </span>
+                        : <span className="text-gray-300">—</span>}
+                    </td>
                     <td className="px-5 py-3.5">
                       <Badge label={sig.source === 'MANUAL' ? 'Manual' : 'Sheet'} variant={sig.source === 'MANUAL' ? 'indigo' : 'blue'} />
                     </td>
                     <td className="px-5 py-3.5">
                       <Badge label={statusLabel(sig.status)} variant={statusVariant(sig.status)} />
-                    </td>
-                    <td className="px-5 py-3.5 text-gray-400 text-xs">
-                      {new Date(sig.addedAt).toLocaleDateString('en-IN')}
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-2">

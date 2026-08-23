@@ -1,3 +1,10 @@
+export interface SignalQuote {
+  signalId: number
+  rank: number | null
+  ltp: number | null
+  diffFromEntryPct: number | null
+}
+
 export interface Signal {
   id: number
   symbol: string
