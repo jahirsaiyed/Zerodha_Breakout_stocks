@@ -11,36 +11,83 @@ class GoogleFinancePriceServiceTest {
 
     private final GoogleFinancePriceService service = new GoogleFinancePriceService();
 
-    // Google Finance embeds price in AF_initDataCallback as [...,"INR",[<price>,<chg>,<chgPct>,2,2,...],...]
-    // The trailing ,2,2 pattern distinguishes the price tuple from other numeric arrays.
-
-    @Test
-    @DisplayName("parsePrice extracts integer price from AF_initDataCallback array")
-    void parsePrice_plainInteger() {
-        String html = "\"INR\",[2450,-10.5,-0.43,2,2,2],null,2460";
-        assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("2450"));
+    /**
+     * Builds minimal HTML that satisfies the CSS selector path used by GoogleFinancePriceService.
+     * Selector: body > c-wiz:nth-of-type(3) > div > div > div > div:nth-of-type(2) >
+     *           div:nth-of-type(2) > div > div > c-wiz > div > div:nth-of-type(3) >
+     *           c-wiz > div > div > div:nth-of-type(1) > div > div:nth-of-type(2) >
+     *           div > div:nth-of-type(1) > div:nth-of-type(1) > span > span
+     */
+    private static String buildHtml(String priceText) {
+        return """
+                <html><body>
+                  <c-wiz></c-wiz>
+                  <c-wiz></c-wiz>
+                  <c-wiz>
+                    <div><div><div>
+                      <div></div>
+                      <div>
+                        <div></div>
+                        <div>
+                          <div><div>
+                            <c-wiz>
+                              <div>
+                                <div></div>
+                                <div></div>
+                                <div>
+                                  <c-wiz>
+                                    <div><div>
+                                      <div>
+                                        <div>
+                                          <div></div>
+                                          <div>
+                                            <div>
+                                              <div>
+                                                <div><span><span>%s</span></span></div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    </div></div>
+                                  </c-wiz>
+                                </div>
+                              </div>
+                            </c-wiz>
+                          </div></div>
+                        </div>
+                      </div>
+                    </div></div></div>
+                  </c-wiz>
+                </body></html>
+                """.formatted(priceText);
     }
 
     @Test
-    @DisplayName("parsePrice extracts decimal price from AF_initDataCallback array")
+    @DisplayName("parsePrice extracts integer price via Jsoup selector")
+    void parsePrice_integer() {
+        assertThat(service.parsePrice(buildHtml("2,450")))
+                .isEqualByComparingTo(new BigDecimal("2450"));
+    }
+
+    @Test
+    @DisplayName("parsePrice extracts decimal price via Jsoup selector")
     void parsePrice_decimal() {
-        String html = "\"INR\",[2450.75,-5.25,-0.21,2,2,2],null,2456";
-        assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("2450.75"));
+        assertThat(service.parsePrice(buildHtml("2,450.75")))
+                .isEqualByComparingTo(new BigDecimal("2450.75"));
     }
 
     @Test
-    @DisplayName("parsePrice handles negative daily change")
-    void parsePrice_negativeChange() {
-        // Realistic snippet from KHAICHEM page: price=55.82, change=-0.83, changePct=-1.46
-        String html = "\"INR\",[55.82,-0.83000183,-1.46514,2,2,2],null,56.65";
-        assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("55.82"));
+    @DisplayName("parsePrice extracts small decimal price via Jsoup selector")
+    void parsePrice_smallDecimal() {
+        assertThat(service.parsePrice(buildHtml("55.82")))
+                .isEqualByComparingTo(new BigDecimal("55.82"));
     }
 
     @Test
-    @DisplayName("parsePrice returns null when AF_initDataCallback pattern is absent")
+    @DisplayName("parsePrice returns null when selector finds nothing")
     void parsePrice_absent_returnsNull() {
-        String html = "<html><body>No price here</body></html>";
-        assertThat(service.parsePrice(html)).isNull();
+        assertThat(service.parsePrice("<html><body>No price here</body></html>")).isNull();
     }
 
     @Test

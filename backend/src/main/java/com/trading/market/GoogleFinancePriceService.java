@@ -1,6 +1,8 @@
 package com.trading.market;
 
 import lombok.extern.slf4j.Slf4j;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Element;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
@@ -14,8 +16,6 @@ import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /**
  * Fetches last-traded prices for NSE equity symbols from Google Finance.
@@ -31,10 +31,10 @@ import java.util.regex.Pattern;
 public class GoogleFinancePriceService {
 
     private static final String QUOTE_URL = "https://www.google.com/finance/quote/%s:NSE";
-    // Google Finance is a JS SPA; price is embedded in AF_initDataCallback script blocks as
-    // [...,"INR",[<price>,<change>,<changePct>,2,2,...],...] — the trailing ,2,2 distinguishes it.
-    private static final Pattern PRICE_PATTERN =
-            Pattern.compile("\\[([0-9]+\\.?[0-9]*),(?:-?[0-9]+\\.?[0-9]*),(?:-?[0-9]+\\.?[0-9]*),2,2");
+    // CSS selector derived from the browser XPath for the LTP span on Google Finance.
+    // XPath: /html/body/c-wiz[3]/div/div/div/div[2]/div[2]/div/div/c-wiz/div/div[3]/c-wiz/div/div/div[1]/div/div[2]/div/div[1]/div[1]/span/span
+    private static final String PRICE_SELECTOR =
+            "body > c-wiz:nth-of-type(3) > div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > c-wiz > div > div:nth-of-type(3) > c-wiz > div > div > div:nth-of-type(1) > div > div:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(1) > span > span";
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -93,14 +93,17 @@ public class GoogleFinancePriceService {
 
     // package-private for unit testing
     BigDecimal parsePrice(String html) {
-        Matcher m = PRICE_PATTERN.matcher(html);
-        if (m.find()) {
-            try {
-                return new BigDecimal(m.group(1));
-            } catch (NumberFormatException e) {
-                log.debug("Unparseable price value: '{}'", m.group(1));
-            }
+        Element el = Jsoup.parse(html).selectFirst(PRICE_SELECTOR);
+        if (el == null) {
+            log.debug("Price element not found in Google Finance HTML (selector={}) ", PRICE_SELECTOR);
+            return null;
         }
-        return null;
+        String text = el.text().replaceAll("[^0-9.]", "");
+        try {
+            return new BigDecimal(text);
+        } catch (NumberFormatException e) {
+            log.debug("Unparseable price text: '{}'", el.text());
+            return null;
+        }
     }
 }
