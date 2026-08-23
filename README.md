@@ -84,7 +84,7 @@ cp .env.example .env        # fill all required values
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Nginx listens on port 80/443. Configure TLS certificate paths in `nginx/nginx.conf`.
+Nginx listens on port 80/443. Configure TLS certificate paths in `nginx/nginx.prod.conf`.
 
 For database backups:
 
@@ -103,12 +103,12 @@ For database backups:
 | `ENCRYPTION_KEY` | ✓ | ≥ 32-character AES key for encrypting broker secrets |
 | `CORS_ALLOWED_ORIGINS` | ✓ | Frontend URL(s), comma-separated |
 | `COOKIE_SECURE` | ✓ | `true` in production (HTTPS), `false` locally |
-| `ZERODHA_API_KEY` | — | Global fallback API key (per-user key takes precedence) |
-| `ZERODHA_API_SECRET` | — | Global fallback API secret |
+| `ZERODHA_API_KEY` | — | Kite Connect app API key (shared across all users) |
+| `ZERODHA_API_SECRET` | — | Kite Connect app API secret |
 | `TELEGRAM_BOT_TOKEN` | — | Bot token from @BotFather |
-| `TELEGRAM_ENABLED` | — | `true` to enable bot polling |
-| `GOOGLE_SHEETS_ID` | — | Sheet ID for signal sync |
-| `GOOGLE_SHEETS_CREDENTIALS` | — | Path to service account JSON |
+| `TELEGRAM_ENABLED` | — | `true` to enable Telegram bot |
+| `SHEETS_SPREADSHEET_ID` | — | Google Sheets spreadsheet ID for signal sync |
+| `SHEETS_CREDENTIALS_PATH` | — | Absolute path to service account JSON credentials file |
 
 See `.env.example` for the complete list with descriptions.
 

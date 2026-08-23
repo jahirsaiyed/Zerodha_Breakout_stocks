@@ -215,6 +215,18 @@ Each row shows the symbol, quantity, average entry price, realised P&L, outcome 
 
 Access Settings from the sidebar to configure your trading preferences and broker connection.
 
+### 7.0 Account Overview
+
+At the top of the Settings page is a read-only Account Overview panel that gives you a quick snapshot of your account state:
+
+| Metric | What It Shows |
+|--------|--------------|
+| **Available Margin** | Cash available in your Zerodha account for new trades (requires Zerodha connection) |
+| **Positions Used** | Your current active positions vs. your configured maximum (e.g. 2 / 5) |
+| **Open P&L** | Total unrealised profit/loss across all active positions (requires Zerodha connection) |
+
+This panel refreshes every 60 seconds automatically. If Zerodha is not connected, margin and Open P&L show a dash (—).
+
 ### 7.1 Trading Configuration
 
 | Setting | Description |
