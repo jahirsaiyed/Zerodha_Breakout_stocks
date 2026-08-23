@@ -21,16 +21,20 @@ import java.util.regex.Pattern;
  * Fetches last-traded prices for NSE equity symbols from Google Finance.
  *
  * <p>Uses the public {@code https://www.google.com/finance/quote/SYMBOL:NSE} page and
- * extracts the {@code data-last-price} attribute. All symbols are fetched in parallel
- * using virtual threads; individual failures are logged at DEBUG and silently skipped
- * so a single unavailable symbol never blocks the rest.
+ * extracts the last-traded price from the {@code AF_initDataCallback} JSON embedded in the
+ * server-rendered HTML. All symbols are fetched in parallel using virtual threads; individual
+ * failures are logged at DEBUG and silently skipped so a single unavailable symbol never blocks
+ * the rest.
  */
 @Slf4j
 @Service
 public class GoogleFinancePriceService {
 
     private static final String QUOTE_URL = "https://www.google.com/finance/quote/%s:NSE";
-    private static final Pattern PRICE_PATTERN = Pattern.compile("data-last-price=\"([0-9.,]+)\"");
+    // Google Finance is a JS SPA; price is embedded in AF_initDataCallback script blocks as
+    // [...,"INR",[<price>,<change>,<changePct>,2,2,...],...] — the trailing ,2,2 distinguishes it.
+    private static final Pattern PRICE_PATTERN =
+            Pattern.compile("\\[([0-9]+\\.?[0-9]*),(?:-?[0-9]+\\.?[0-9]*),(?:-?[0-9]+\\.?[0-9]*),2,2");
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
@@ -92,7 +96,7 @@ public class GoogleFinancePriceService {
         Matcher m = PRICE_PATTERN.matcher(html);
         if (m.find()) {
             try {
-                return new BigDecimal(m.group(1).replace(",", ""));
+                return new BigDecimal(m.group(1));
             } catch (NumberFormatException e) {
                 log.debug("Unparseable price value: '{}'", m.group(1));
             }

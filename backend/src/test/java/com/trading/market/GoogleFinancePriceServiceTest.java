@@ -11,29 +11,33 @@ class GoogleFinancePriceServiceTest {
 
     private final GoogleFinancePriceService service = new GoogleFinancePriceService();
 
+    // Google Finance embeds price in AF_initDataCallback as [...,"INR",[<price>,<chg>,<chgPct>,2,2,...],...]
+    // The trailing ,2,2 pattern distinguishes the price tuple from other numeric arrays.
+
     @Test
-    @DisplayName("parsePrice extracts plain integer price")
+    @DisplayName("parsePrice extracts integer price from AF_initDataCallback array")
     void parsePrice_plainInteger() {
-        String html = "<div data-last-price=\"2450\" class=\"YMlKec\">₹2,450</div>";
+        String html = "\"INR\",[2450,-10.5,-0.43,2,2,2],null,2460";
         assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("2450"));
     }
 
     @Test
-    @DisplayName("parsePrice extracts decimal price")
+    @DisplayName("parsePrice extracts decimal price from AF_initDataCallback array")
     void parsePrice_decimal() {
-        String html = "data-last-price=\"2450.75\" data-prev-close=\"2400\"";
+        String html = "\"INR\",[2450.75,-5.25,-0.21,2,2,2],null,2456";
         assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("2450.75"));
     }
 
     @Test
-    @DisplayName("parsePrice strips commas from large numbers")
-    void parsePrice_withCommas() {
-        String html = "data-last-price=\"1,234,567.89\"";
-        assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("1234567.89"));
+    @DisplayName("parsePrice handles negative daily change")
+    void parsePrice_negativeChange() {
+        // Realistic snippet from KHAICHEM page: price=55.82, change=-0.83, changePct=-1.46
+        String html = "\"INR\",[55.82,-0.83000183,-1.46514,2,2,2],null,56.65";
+        assertThat(service.parsePrice(html)).isEqualByComparingTo(new BigDecimal("55.82"));
     }
 
     @Test
-    @DisplayName("parsePrice returns null when attribute is absent")
+    @DisplayName("parsePrice returns null when AF_initDataCallback pattern is absent")
     void parsePrice_absent_returnsNull() {
         String html = "<html><body>No price here</body></html>";
         assertThat(service.parsePrice(html)).isNull();
