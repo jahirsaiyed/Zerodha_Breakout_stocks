@@ -31,4 +31,10 @@ public class AuthController {
         authService.logout(response);
         return ResponseEntity.ok(ApiResponse.success(null));
     }
+
+    @GetMapping("/health")
+    @Operation(summary = "Health check", description = "Public liveness probe for uptime monitoring")
+    public ResponseEntity<ApiResponse<String>> health() {
+        return ResponseEntity.ok(ApiResponse.success("ok"));
+    }
 }
