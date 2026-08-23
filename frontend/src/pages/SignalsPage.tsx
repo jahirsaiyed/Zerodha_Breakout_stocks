@@ -9,12 +9,6 @@ const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', notes: '' 
 
 type EditState = { id: number; entryPrice: string; stopLoss: string; target: string; notes: string }
 
-function diffColor(diff: number | null): string {
-  if (diff === null) return 'text-gray-400'
-  if (diff < 0) return 'text-red-500'
-  if (diff < 5) return 'text-amber-500'
-  return 'text-emerald-600'
-}
 
 function diffBg(diff: number | null): string {
   if (diff === null) return ''
