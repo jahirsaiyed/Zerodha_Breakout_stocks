@@ -303,8 +303,9 @@ export function SettingsPage() {
                 : 'bg-red-50 text-red-700'
             }`}>{telegramTestMsg}</p>
           )}
-          {telegramChats.length > 0 ? (
-            <Field label="Notification Chat" hint="Select the Telegram chat or channel for trade alerts">
+          {(telegramChats.length > 0 || form.telegramChatId) ? (
+            <Field label="Notification Chat"
+              hint="Send any message to the bot to discover more chats, or enter an ID manually in the last option.">
               <select value={form.telegramChatId} onChange={set('telegramChatId')} className={inputCls}>
                 <option value="">— Select a chat —</option>
                 {telegramChats.map(chat => (
