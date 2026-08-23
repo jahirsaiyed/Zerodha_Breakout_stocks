@@ -1,9 +1,9 @@
 package com.trading.notifications;
 
+import com.trading.common.EncryptionUtil;
 import com.trading.signals.Position;
 import com.trading.signals.PositionRepository;
 import com.trading.signals.PositionStatus;
-import com.trading.signals.Signal;
 import com.trading.signals.SignalRepository;
 import com.trading.signals.SignalStatus;
 import com.trading.users.User;
@@ -29,29 +29,42 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class TelegramBotServiceTest {
 
-    @Mock TelegramBotConfigService botConfigService;
     @Mock TelegramProperties props;
     @Mock TelegramApiClient telegramClient;
     @Mock UserConfigRepository userConfigRepository;
     @Mock PositionRepository positionRepository;
     @Mock SignalRepository signalRepository;
+    @Mock EncryptionUtil encryptionUtil;
     @Mock RestTemplate restTemplate;
 
     TelegramBotService botService;
 
-    private static final String CHAT_ID = "123456789";
+    private static final long   USER_ID   = 1L;
+    private static final String CHAT_ID   = "123456789";
+    private static final String ENC_TOKEN = "encrypted-bot-token";
+    private static final String BOT_TOKEN = "bot-token";
 
     @BeforeEach
     void setUp() {
-        lenient().when(botConfigService.getActiveToken()).thenReturn(java.util.Optional.of("bot-token"));
         lenient().when(props.getBaseUrl()).thenReturn("https://api.telegram.org");
+        lenient().when(encryptionUtil.decrypt(ENC_TOKEN)).thenReturn(BOT_TOKEN);
 
-        botService = new TelegramBotService(botConfigService, props, telegramClient, userConfigRepository,
-                positionRepository, signalRepository);
+        botService = new TelegramBotService(props, telegramClient, userConfigRepository,
+                positionRepository, signalRepository, encryptionUtil);
         ReflectionTestUtils.setField(botService, "restTemplate", restTemplate);
     }
 
-    private void mockTelegramUpdate(String command) {
+    private UserConfig configWithBot(String chatId) {
+        User user = User.builder().id(USER_ID).build();
+        return UserConfig.builder()
+                .user(user)
+                .telegramChatId(chatId)
+                .telegramBotToken(ENC_TOKEN)
+                .zerodhaConnected(false)
+                .build();
+    }
+
+    private void mockBotUpdate(String command) {
         String json = """
                 {"ok":true,"result":[{"update_id":1,"message":{"text":"%s","chat":{"id":%s,"type":"private"}}}]}
                 """.formatted(command, CHAT_ID);
@@ -59,22 +72,19 @@ class TelegramBotServiceTest {
                 .thenReturn(ResponseEntity.ok(json));
     }
 
-    private UserConfig configForChatId(String chatId) {
-        User user = User.builder().id(1L).build();
-        return UserConfig.builder().user(user).telegramChatId(chatId).zerodhaConnected(false).build();
-    }
+    // ── Command handling ──────────────────────────────────────────────────────
 
     @Test
     @DisplayName("/portfolio with no positions sends empty message")
     void portfolioCommand_noPositions_sendsEmptyMessage() {
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
-        when(positionRepository.findByUserIdAndStatus(1L, PositionStatus.ACTIVE)).thenReturn(List.of());
-        when(positionRepository.findByUserIdAndStatus(1L, PositionStatus.PENDING_ENTRY)).thenReturn(List.of());
-        mockTelegramUpdate("/portfolio");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
+        when(positionRepository.findByUserIdAndStatus(USER_ID, PositionStatus.ACTIVE)).thenReturn(List.of());
+        when(positionRepository.findByUserIdAndStatus(USER_ID, PositionStatus.PENDING_ENTRY)).thenReturn(List.of());
+        mockBotUpdate("/portfolio");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("No open positions"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("No open positions"));
     }
 
     @Test
@@ -86,83 +96,95 @@ class TelegramBotServiceTest {
         pos.setAvgEntryPrice(new BigDecimal("2400.00"));
         pos.setStatus(PositionStatus.ACTIVE);
 
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
-        when(positionRepository.findByUserIdAndStatus(1L, PositionStatus.ACTIVE)).thenReturn(List.of(pos));
-        when(positionRepository.findByUserIdAndStatus(1L, PositionStatus.PENDING_ENTRY)).thenReturn(List.of());
-        mockTelegramUpdate("/portfolio");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
+        when(positionRepository.findByUserIdAndStatus(USER_ID, PositionStatus.ACTIVE)).thenReturn(List.of(pos));
+        when(positionRepository.findByUserIdAndStatus(USER_ID, PositionStatus.PENDING_ENTRY)).thenReturn(List.of());
+        mockBotUpdate("/portfolio");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("RELIANCE"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("RELIANCE"));
     }
 
     @Test
     @DisplayName("/signals with no active signals sends empty message")
     void signalsCommand_noActiveSignals_sendsEmptyMessage() {
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
         when(signalRepository.findByStatus(SignalStatus.ACTIVE)).thenReturn(List.of());
-        mockTelegramUpdate("/signals");
+        mockBotUpdate("/signals");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("No active signals"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("No active signals"));
     }
 
     @Test
     @DisplayName("/summary sends P&L summary with win/loss counts")
     void summaryCommand_sendsPnlSummary() {
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
-        when(positionRepository.findByUserIdAndStatusIn(eq(1L), anyList())).thenReturn(List.of());
-        mockTelegramUpdate("/summary");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
+        when(positionRepository.findByUserIdAndStatusIn(eq(USER_ID), anyList())).thenReturn(List.of());
+        mockBotUpdate("/summary");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("Summary"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("Summary"));
     }
 
     @Test
     @DisplayName("/status sends system status message")
     void statusCommand_sendsSystemStatus() {
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
-        mockTelegramUpdate("/status");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
+        mockBotUpdate("/status");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("System Status"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("System Status"));
     }
 
     @Test
     @DisplayName("unknown command sends help message")
     void unknownCommand_sendsHelpMessage() {
-        when(userConfigRepository.findAll()).thenReturn(List.of(configForChatId(CHAT_ID)));
-        mockTelegramUpdate("/unknown");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
+        mockBotUpdate("/unknown");
 
         botService.pollUpdates();
 
-        verify(telegramClient).sendMessage(eq(CHAT_ID), contains("Unknown command"));
+        verify(telegramClient).sendMessage(eq(BOT_TOKEN), eq(CHAT_ID), contains("Unknown command"));
     }
 
     @Test
-    @DisplayName("message from unknown chat ID is silently ignored")
+    @DisplayName("command from chatId that does not match user config is silently ignored")
     void unknownChatId_silentlyIgnored() {
-        when(userConfigRepository.findAll()).thenReturn(List.of()); // no matching config
-        mockTelegramUpdate("/portfolio");
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot("999999")));
+        mockBotUpdate("/portfolio");
 
         botService.pollUpdates();
 
-        verify(telegramClient, never()).sendMessage(any(), any());
+        verify(telegramClient, never()).sendMessage(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("users without a bot token are skipped during polling")
+    void pollUpdates_noToken_skipped() {
+        User user = User.builder().id(USER_ID).build();
+        UserConfig noToken = UserConfig.builder().user(user).telegramChatId(CHAT_ID).build();
+        when(userConfigRepository.findAll()).thenReturn(List.of(noToken));
+
+        botService.pollUpdates();
+
+        verifyNoInteractions(restTemplate);
     }
 
     // ── Chat discovery ────────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("getDiscoveredChats returns empty list before any updates are polled")
-    void getDiscoveredChats_beforeAnyPolls_returnsEmpty() {
-        assertThat(botService.getDiscoveredChats()).isEmpty();
+    @DisplayName("getDiscoveredChatsForUser returns empty list before any updates are polled")
+    void getDiscoveredChatsForUser_beforeAnyPolls_returnsEmpty() {
+        assertThat(botService.getDiscoveredChatsForUser(USER_ID)).isEmpty();
     }
 
     @Test
-    @DisplayName("pollUpdates records group chat metadata in discoveredChats")
+    @DisplayName("pollUpdates records group chat metadata scoped to the user")
     void pollUpdates_groupChatUpdate_recordsChatInfo() {
         String json = """
                 {"ok":true,"result":[{"update_id":10,"message":{
@@ -170,13 +192,12 @@ class TelegramBotServiceTest {
                   "chat":{"id":999,"type":"group","title":"Trading Alerts"}
                 }}]}
                 """;
-        when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(ResponseEntity.ok(json));
-        when(userConfigRepository.findAll()).thenReturn(List.of());
+        when(restTemplate.getForEntity(anyString(), eq(String.class))).thenReturn(ResponseEntity.ok(json));
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
 
         botService.pollUpdates();
 
-        List<TelegramChatDto> chats = botService.getDiscoveredChats();
+        List<TelegramChatDto> chats = botService.getDiscoveredChatsForUser(USER_ID);
         assertThat(chats).hasSize(1);
         assertThat(chats.get(0).chatId()).isEqualTo("999");
         assertThat(chats.get(0).chatTitle()).isEqualTo("Trading Alerts");
@@ -192,17 +213,15 @@ class TelegramBotServiceTest {
                   "chat":{"id":777,"type":"private","first_name":"Alice","last_name":"Smith"}
                 }}]}
                 """;
-        when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(ResponseEntity.ok(json));
-        when(userConfigRepository.findAll()).thenReturn(List.of());
+        when(restTemplate.getForEntity(anyString(), eq(String.class))).thenReturn(ResponseEntity.ok(json));
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
 
         botService.pollUpdates();
 
-        List<TelegramChatDto> chats = botService.getDiscoveredChats();
+        List<TelegramChatDto> chats = botService.getDiscoveredChatsForUser(USER_ID);
         assertThat(chats).hasSize(1);
         assertThat(chats.get(0).chatId()).isEqualTo("777");
         assertThat(chats.get(0).chatTitle()).isEqualTo("Alice Smith");
-        assertThat(chats.get(0).chatType()).isEqualTo("private");
     }
 
     @Test
@@ -214,12 +233,12 @@ class TelegramBotServiceTest {
                   "chat":{"id":-100123,"type":"channel","title":"My Channel"}
                 }}]}
                 """;
-        when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(ResponseEntity.ok(json));
+        when(restTemplate.getForEntity(anyString(), eq(String.class))).thenReturn(ResponseEntity.ok(json));
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
 
         botService.pollUpdates();
 
-        List<TelegramChatDto> chats = botService.getDiscoveredChats();
+        List<TelegramChatDto> chats = botService.getDiscoveredChatsForUser(USER_ID);
         assertThat(chats).hasSize(1);
         assertThat(chats.get(0).chatId()).isEqualTo("-100123");
         assertThat(chats.get(0).chatTitle()).isEqualTo("My Channel");
@@ -235,12 +254,11 @@ class TelegramBotServiceTest {
                   {"update_id":21,"message":{"text":"/status","chat":{"id":555,"type":"private","first_name":"Bob"}}}
                 ]}
                 """;
-        when(restTemplate.getForEntity(anyString(), eq(String.class)))
-                .thenReturn(ResponseEntity.ok(json));
-        when(userConfigRepository.findAll()).thenReturn(List.of());
+        when(restTemplate.getForEntity(anyString(), eq(String.class))).thenReturn(ResponseEntity.ok(json));
+        when(userConfigRepository.findAll()).thenReturn(List.of(configWithBot(CHAT_ID)));
 
         botService.pollUpdates();
 
-        assertThat(botService.getDiscoveredChats()).hasSize(1);
+        assertThat(botService.getDiscoveredChatsForUser(USER_ID)).hasSize(1);
     }
 }

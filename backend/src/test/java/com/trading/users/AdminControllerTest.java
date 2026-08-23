@@ -2,8 +2,6 @@ package com.trading.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.auth.JwtUtil;
-import com.trading.notifications.TelegramBotConfigDto;
-import com.trading.notifications.TelegramBotConfigService;
 import com.trading.portfolio.PortfolioEngine;
 import com.trading.signals.InstrumentCacheService;
 import com.trading.signals.SignalSyncLog;
@@ -16,7 +14,6 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,7 +43,6 @@ class AdminControllerTest {
     @MockBean InstrumentCacheService instrumentCacheService;
     @MockBean PortfolioEngine portfolioEngine;
     @MockBean JwtUtil jwtUtil;
-    @MockBean TelegramBotConfigService telegramBotConfigService;
 
     // ── GET /admin/health ─────────────────────────────────────────────────────
 
@@ -128,107 +124,5 @@ class AdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(userService).setUserActive(1L, false);
-    }
-
-    // ── GET /admin/telegram/bot ───────────────────────────────────────────────
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("GET /admin/telegram/bot returns current bot config")
-    void getBotConfig_returnsConfig() throws Exception {
-        TelegramBotConfigDto dto = new TelegramBotConfigDto("My Bot", "mybot", true, true);
-        when(telegramBotConfigService.getConfig()).thenReturn(dto);
-
-        mockMvc.perform(get("/api/admin/telegram/bot"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.botName").value("My Bot"))
-                .andExpect(jsonPath("$.data.botUsername").value("mybot"))
-                .andExpect(jsonPath("$.data.enabled").value(true))
-                .andExpect(jsonPath("$.data.hasToken").value(true));
-    }
-
-    @Test
-    @DisplayName("GET /admin/telegram/bot requires authentication")
-    void getBotConfig_unauthenticated_returns403() throws Exception {
-        mockMvc.perform(get("/api/admin/telegram/bot"))
-                .andExpect(status().isForbidden());
-    }
-
-    // ── POST /admin/telegram/bot ──────────────────────────────────────────────
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("POST /admin/telegram/bot connects bot and returns config with bot name")
-    void connectBot_validToken_returnsConnectedConfig() throws Exception {
-        TelegramBotConfigDto dto = new TelegramBotConfigDto("Trading Bot", "tradingbot", true, true);
-        when(telegramBotConfigService.connectBot("valid-token-123")).thenReturn(dto);
-
-        mockMvc.perform(post("/api/admin/telegram/bot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"botToken\":\"valid-token-123\"}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.botName").value("Trading Bot"))
-                .andExpect(jsonPath("$.data.botUsername").value("tradingbot"))
-                .andExpect(jsonPath("$.data.enabled").value(true));
-
-        verify(telegramBotConfigService).connectBot("valid-token-123");
-    }
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("POST /admin/telegram/bot returns 400 when token is rejected by Telegram")
-    void connectBot_invalidToken_returns400() throws Exception {
-        when(telegramBotConfigService.connectBot("bad-token"))
-                .thenThrow(new IllegalArgumentException("Telegram rejected the token"));
-
-        mockMvc.perform(post("/api/admin/telegram/bot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"botToken\":\"bad-token\"}"))
-                .andExpect(status().isBadRequest());
-    }
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("POST /admin/telegram/bot returns 400 when botToken is blank")
-    void connectBot_blankToken_returns400() throws Exception {
-        mockMvc.perform(post("/api/admin/telegram/bot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"botToken\":\"\"}"))
-                .andExpect(status().isBadRequest());
-
-        verify(telegramBotConfigService, never()).connectBot(any());
-    }
-
-    @Test
-    @DisplayName("POST /admin/telegram/bot requires authentication")
-    void connectBot_unauthenticated_returns403() throws Exception {
-        mockMvc.perform(post("/api/admin/telegram/bot")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"botToken\":\"token\"}"))
-                .andExpect(status().isForbidden());
-    }
-
-    // ── DELETE /admin/telegram/bot ────────────────────────────────────────────
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("DELETE /admin/telegram/bot disconnects the bot")
-    void disconnectBot_returns200() throws Exception {
-        doNothing().when(telegramBotConfigService).disconnectBot();
-
-        mockMvc.perform(delete("/api/admin/telegram/bot"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true));
-
-        verify(telegramBotConfigService).disconnectBot();
-    }
-
-    @Test
-    @DisplayName("DELETE /admin/telegram/bot requires authentication")
-    void disconnectBot_unauthenticated_returns403() throws Exception {
-        mockMvc.perform(delete("/api/admin/telegram/bot"))
-                .andExpect(status().isForbidden());
     }
 }
