@@ -322,7 +322,7 @@ export function SettingsPage() {
             <Field label="Chat ID"
               hint="Send any message to the bot in your desired chat or channel — it will appear here as a selectable option. Or enter the ID manually.">
               <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
-                placeholder="e.g. 123456789" className={inputCls} />
+                placeholder="e.g. 123456789" autoComplete="off" className={inputCls} />
             </Field>
           )}
         </div>
