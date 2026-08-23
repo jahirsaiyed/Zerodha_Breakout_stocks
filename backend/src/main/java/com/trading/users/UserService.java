@@ -79,6 +79,7 @@ public class UserService {
         if (req.zerodhaTotpSecret() != null)
             cfg.setZerodhaTotpSecret(req.zerodhaTotpSecret().isBlank() ? null
                     : encryptionUtil.encrypt(req.zerodhaTotpSecret()));
+        if (req.marginUsagePercent() != null) cfg.setMarginUsagePercent(req.marginUsagePercent());
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
@@ -135,7 +136,8 @@ public class UserService {
                 cfg.getZerodhaTotpSecret() != null && !cfg.getZerodhaTotpSecret().isBlank(),
                 cfg.getTelegramBotToken() != null,
                 cfg.getTelegramBotName(),
-                cfg.getTelegramBotUsername());
+                cfg.getTelegramBotUsername(),
+                cfg.getMarginUsagePercent());
     }
 
     private BotIdentity fetchBotIdentity(String rawToken) {

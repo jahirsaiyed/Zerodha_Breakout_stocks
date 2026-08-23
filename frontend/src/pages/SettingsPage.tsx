@@ -61,6 +61,7 @@ export function SettingsPage() {
     positionSizingMethod: 'FIXED',
     positionSizingValue: '10000',
     orderExpiryDays: '5',
+    marginUsagePercent: '100',
     telegramChatId: '',
     zerodhaTotpSecret: '',
   })
@@ -72,6 +73,7 @@ export function SettingsPage() {
         positionSizingMethod: config.positionSizingMethod,
         positionSizingValue: String(config.positionSizingValue),
         orderExpiryDays: String(config.orderExpiryDays),
+        marginUsagePercent: String(config.marginUsagePercent),
         telegramChatId: config.telegramChatId ?? '',
         zerodhaTotpSecret: '',
       })
@@ -107,6 +109,7 @@ export function SettingsPage() {
       positionSizingMethod: form.positionSizingMethod,
       positionSizingValue: Number(form.positionSizingValue),
       orderExpiryDays: Number(form.orderExpiryDays),
+      marginUsagePercent: Number(form.marginUsagePercent),
       telegramChatId: form.telegramChatId || null,
       zerodhaTotpSecret: form.zerodhaTotpSecret || null,
     }),
@@ -207,9 +210,16 @@ export function SettingsPage() {
           <div>
             <p className="text-xs text-gray-500">Available Margin</p>
             {summary?.availableMargin != null ? (
-              <p className="mt-1 text-xl font-semibold text-gray-950">
-                ₹{summary.availableMargin.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </p>
+              <>
+                <p className="mt-1 text-xl font-semibold text-gray-950">
+                  ₹{summary.availableMargin.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </p>
+                {config?.marginUsagePercent != null && config.marginUsagePercent < 100 && (
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    ₹{(summary.availableMargin * config.marginUsagePercent / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} usable ({config.marginUsagePercent}%)
+                  </p>
+                )}
+              </>
             ) : (
               <p className="mt-1 text-xl font-semibold text-gray-400">—</p>
             )}
@@ -252,6 +262,11 @@ export function SettingsPage() {
             <Field label="Order Expiry Days" hint="Cancel unfilled orders after N days">
               <input type="number" min={1} max={30} value={form.orderExpiryDays}
                 onChange={set('orderExpiryDays')} className={inputCls} />
+            </Field>
+
+            <Field label="Margin Usage (%)" hint="Percentage of available margin the system may deploy (1–100%)">
+              <input type="number" min={1} max={100} step={1} value={form.marginUsagePercent}
+                onChange={set('marginUsagePercent')} className={inputCls} />
             </Field>
 
             <Field label="Position Sizing Method">
