@@ -16,9 +16,6 @@ cors:
 cookie:
   secure: false
 
-telegram:
-  enabled: false
-
 sheets:
   enabled: ${SHEETS_ENABLED:true}
   spreadsheet-id: ${SHEETS_SPREADSHEET_ID:1wfDvpIb0my2NycIO4mJyJ2JOXpyXMl7qVDezp-1KsYY}

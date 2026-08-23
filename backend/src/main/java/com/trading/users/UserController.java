@@ -4,6 +4,8 @@ import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
 import com.trading.common.ApiResponse;
 import com.trading.notifications.NotificationService;
+import com.trading.notifications.TelegramBotService;
+import com.trading.notifications.TelegramChatDto;
 import com.trading.portfolio.PortfolioDbService;
 import com.trading.users.dto.AccountSummaryResponse;
 import com.trading.users.dto.ChangePasswordRequest;
@@ -21,6 +23,7 @@ import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Optional;
 
 import static com.trading.config.OpenApiConfig.COOKIE_AUTH;
@@ -36,6 +39,7 @@ public class UserController {
     private final NotificationService notificationService;
     private final BrokerAdapterFactory brokerAdapterFactory;
     private final PortfolioDbService portfolioDbService;
+    private final Optional<TelegramBotService> telegramBotService;
 
     @GetMapping("/me")
     @Operation(summary = "Get current user")
@@ -71,6 +75,15 @@ public class UserController {
         notificationService.notifyUser(userId,
                 "Test message from Zerodha Breakout — your Telegram notifications are working.");
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @GetMapping("/me/telegram/chats")
+    @Operation(summary = "List Telegram chats discovered from bot updates")
+    public ResponseEntity<ApiResponse<List<TelegramChatDto>>> getTelegramChats() {
+        List<TelegramChatDto> chats = telegramBotService
+                .map(TelegramBotService::getDiscoveredChats)
+                .orElse(List.of());
+        return ResponseEntity.ok(ApiResponse.success(chats));
     }
 
     @GetMapping("/me/account-summary")
