@@ -51,6 +51,7 @@ zerodha:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   connect-timeout-ms: ${ZERODHA_CONNECT_TIMEOUT_MS:10000}
   read-timeout-ms: ${ZERODHA_READ_TIMEOUT_MS:30000}
+  order-base-url: ${ZERODHA_ORDER_BASE_URL:}
 
 sheets:
   enabled: ${SHEETS_ENABLED:false}

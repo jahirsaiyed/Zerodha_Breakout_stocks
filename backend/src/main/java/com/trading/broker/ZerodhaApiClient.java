@@ -38,15 +38,22 @@ public class ZerodhaApiClient {
     private final String apiKey;
     private final String accessToken;
     private final String baseUrl;
+    private final String orderBaseUrl;
     private final RestTemplate restTemplate;
     private final RateLimiter rateLimiter;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     ZerodhaApiClient(String apiKey, String accessToken, String baseUrl,
                      int connectTimeoutMs, int readTimeoutMs) {
+        this(apiKey, accessToken, baseUrl, null, connectTimeoutMs, readTimeoutMs);
+    }
+
+    ZerodhaApiClient(String apiKey, String accessToken, String baseUrl, String orderBaseUrl,
+                     int connectTimeoutMs, int readTimeoutMs) {
         this.apiKey = apiKey;
         this.accessToken = accessToken;
         this.baseUrl = baseUrl;
+        this.orderBaseUrl = (orderBaseUrl != null && !orderBaseUrl.isBlank()) ? orderBaseUrl : baseUrl;
         this.rateLimiter = RateLimiter.create(10.0); // 10 req/s per Zerodha limits
         this.restTemplate = buildRestTemplate(connectTimeoutMs, readTimeoutMs);
     }
@@ -66,7 +73,7 @@ public class ZerodhaApiClient {
             form.add("validity", "DAY");
             form.add("tag", tag);
 
-            JsonNode data = postForm("/orders/regular", form);
+            JsonNode data = postForm(orderBaseUrl, "/orders/regular", form);
             return data.path("order_id").asText();
         });
     }
@@ -258,10 +265,14 @@ public class ZerodhaApiClient {
     }
 
     private JsonNode postForm(String path, MultiValueMap<String, String> form) {
+        return postForm(baseUrl, path, form);
+    }
+
+    private JsonNode postForm(String base, String path, MultiValueMap<String, String> form) {
         HttpHeaders headers = authHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         ResponseEntity<JsonNode> response = restTemplate.exchange(
-                baseUrl + path, HttpMethod.POST,
+                base + path, HttpMethod.POST,
                 new HttpEntity<>(form, headers), JsonNode.class);
         return parseResponse(response);
     }

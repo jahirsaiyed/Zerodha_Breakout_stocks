@@ -26,7 +26,7 @@ public class BrokerAdapterFactory {
      */
     public String exchangeToken(String apiKey, String apiSecret, String requestToken) {
         ZerodhaApiClient client = new ZerodhaApiClient(
-                apiKey, "", props.getBaseUrl(),
+                apiKey, "", props.getBaseUrl(), props.getOrderBaseUrl(),
                 props.getConnectTimeoutMs(), props.getReadTimeoutMs());
         return client.refreshAccessToken(apiKey, apiSecret, requestToken);
     }
@@ -46,9 +46,8 @@ public class BrokerAdapterFactory {
 
         ZerodhaApiClient client = new ZerodhaApiClient(
                 apiKey, accessToken,
-                props.getBaseUrl(),
-                props.getConnectTimeoutMs(),
-                props.getReadTimeoutMs());
+                props.getBaseUrl(), props.getOrderBaseUrl(),
+                props.getConnectTimeoutMs(), props.getReadTimeoutMs());
 
         log.debug("Created ZerodhaBrokerAdapter for user config id={}", config.getId());
         return new ZerodhaBrokerAdapter(client);

@@ -14,6 +14,7 @@ public class ZerodhaProperties {
     private String frontendUrl = "http://localhost:5173";
     private int connectTimeoutMs = 10_000;
     private int readTimeoutMs = 30_000;
+    private String orderBaseUrl;
 
     public String getApiKey() { return apiKey; }
     public void setApiKey(String apiKey) { this.apiKey = apiKey; }
@@ -35,4 +36,8 @@ public class ZerodhaProperties {
 
     public int getReadTimeoutMs() { return readTimeoutMs; }
     public void setReadTimeoutMs(int readTimeoutMs) { this.readTimeoutMs = readTimeoutMs; }
+
+    public String getOrderBaseUrl() { return orderBaseUrl; }
+    public void setOrderBaseUrl(String orderBaseUrl) { this.orderBaseUrl = orderBaseUrl; }
+
 }
