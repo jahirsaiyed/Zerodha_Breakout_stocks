@@ -202,7 +202,10 @@ public class ZerodhaApiClient {
     public BigDecimal getAvailableMargin() {
         return executeWithRetry(() -> {
             JsonNode data = get("/user/margins/equity");
-            return new BigDecimal(data.path("available").path("cash").asText("0"));
+            // Use "net" (not "available.cash") so intraday deposits are included.
+            // "available.cash" is the opening-day balance and does not update on same-day deposits.
+            // "net" = cash + payin + collateral - margin_used, reflecting real available margin.
+            return new BigDecimal(data.path("net").asText("0"));
         });
     }
 
