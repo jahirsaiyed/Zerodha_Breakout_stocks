@@ -75,6 +75,11 @@ Each signal row shows:
 - **Symbol** — NSE stock code
 - **Entry / Stop Loss / Target** — Price levels in ₹
 - **R:R** — Risk-to-reward ratio (higher is better)
+- **LTP** — Last traded price fetched from Google Finance (ACTIVE signals only)
+- **vs Entry** — How far the current LTP is above or below your entry price, shown as a colour-coded badge (ACTIVE signals only):
+  - 🔴 **Red** — LTP is below entry price (stock hasn't reached your entry yet, or has pulled back)
+  - 🟡 **Amber** — LTP is 0–5% above entry (close to entry, still a reasonable chase)
+  - 🟢 **Green** — LTP is more than 5% above entry (stock has broken out strongly)
 - **Source** — *Manual* (added by you) or *Sheet* (synced from Google Sheets)
 - **Status** — ACTIVE, EXPIRED, or CANCELLED
 

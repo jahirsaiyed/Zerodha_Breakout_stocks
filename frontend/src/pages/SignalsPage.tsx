@@ -11,16 +11,16 @@ type EditState = { id: number; entryPrice: string; stopLoss: string; target: str
 
 function diffColor(diff: number | null): string {
   if (diff === null) return 'text-gray-400'
-  if (diff < 0) return 'text-emerald-600'
+  if (diff < 0) return 'text-red-500'
   if (diff < 5) return 'text-amber-500'
-  return 'text-red-500'
+  return 'text-emerald-600'
 }
 
 function diffBg(diff: number | null): string {
   if (diff === null) return ''
-  if (diff < 0) return 'bg-emerald-50 text-emerald-700'
+  if (diff < 0) return 'bg-red-50 text-red-600'
   if (diff < 5) return 'bg-amber-50 text-amber-700'
-  return 'bg-red-50 text-red-600'
+  return 'bg-emerald-50 text-emerald-700'
 }
 
 export function SignalsPage() {
