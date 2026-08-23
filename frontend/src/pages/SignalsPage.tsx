@@ -235,6 +235,8 @@ export function SignalsPage() {
                       </td>
                       <td className="px-5 py-2">
                         <div className="flex flex-col gap-1">
+                          <input value={editState.notes} onChange={setEdit('notes')} placeholder="Notes"
+                            className={inputCls} />
                           {editError && <p className="text-xs text-red-600">{editError}</p>}
                           <div className="flex gap-2">
                             <button onClick={() => update.mutate(editState)}

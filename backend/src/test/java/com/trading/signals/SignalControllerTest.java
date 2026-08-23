@@ -1,13 +1,12 @@
 package com.trading.signals;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.trading.broker.BrokerAdapterFactory;
+import com.trading.market.GoogleFinancePriceService;
 import com.trading.portfolio.SignalScoringService;
 import com.trading.signals.dto.CreateSignalRequest;
 import com.trading.signals.dto.SignalResponse;
 import com.trading.signals.dto.SyncLogResponse;
 import com.trading.signals.dto.UpdateSignalRequest;
-import com.trading.users.UserConfigRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +21,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
+import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,8 +42,7 @@ class SignalControllerTest {
 
     @MockBean SignalService signalService;
     @MockBean SheetSyncService sheetSyncService;
-    @MockBean UserConfigRepository userConfigRepository;
-    @MockBean BrokerAdapterFactory brokerAdapterFactory;
+    @MockBean GoogleFinancePriceService googleFinancePriceService;
     @MockBean SignalScoringService scoringService;
     @MockBean com.trading.auth.JwtUtil jwtUtil;
 
@@ -193,21 +191,40 @@ class SignalControllerTest {
 
     @Test
     @WithMockUser
-    @DisplayName("GET /api/signals/quotes returns null ltp when user has no Zerodha connection")
-    void quotes_noZerodhaConnection_returnsNullLtp() throws Exception {
+    @DisplayName("GET /api/signals/quotes returns null ltp when Google Finance unavailable")
+    void quotes_googleFinanceUnavailable_returnsNullLtp() throws Exception {
         Signal sig = Signal.builder()
                 .symbol("RELIANCE").entryPrice(new BigDecimal("100"))
                 .stopLoss(new BigDecimal("90")).target(new BigDecimal("120"))
                 .riskRewardRatio(new BigDecimal("2.0000"))
                 .source(SignalSource.MANUAL).status(SignalStatus.ACTIVE).build();
         when(signalService.findActiveSignals()).thenReturn(List.of(sig));
-        when(userConfigRepository.findByUser_Email(any())).thenReturn(Optional.empty());
+        when(googleFinancePriceService.getPrices(any())).thenReturn(Map.of());
         when(scoringService.rank(any(), any())).thenReturn(List.of());
 
         mockMvc.perform(get("/api/signals/quotes"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data[0].ltp").doesNotExist());
+    }
+
+    @Test
+    @WithMockUser
+    @DisplayName("GET /api/signals/quotes returns ltp and diff when prices are available")
+    void quotes_withPrices_returnsLtpAndDiff() throws Exception {
+        Signal sig = Signal.builder()
+                .symbol("RELIANCE").entryPrice(new BigDecimal("100"))
+                .stopLoss(new BigDecimal("90")).target(new BigDecimal("120"))
+                .riskRewardRatio(new BigDecimal("2.0000"))
+                .source(SignalSource.MANUAL).status(SignalStatus.ACTIVE).build();
+        when(signalService.findActiveSignals()).thenReturn(List.of(sig));
+        when(googleFinancePriceService.getPrices(any())).thenReturn(Map.of("RELIANCE", new BigDecimal("103")));
+        when(scoringService.rank(any(), any())).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/signals/quotes"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].ltp").value(103))
+                .andExpect(jsonPath("$.data[0].diffFromEntryPct").value(3.00));
     }
 
     @Test
