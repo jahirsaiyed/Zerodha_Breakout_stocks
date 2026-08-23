@@ -55,7 +55,7 @@ export function DashboardPage() {
   const pnlFormatted = (totalPnl >= 0 ? '+' : '') + '₹' + totalPnl.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-950">Dashboard</h1>
         <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
@@ -88,40 +88,42 @@ export function DashboardPage() {
             No active positions. <Link to="/signals" className="text-indigo-600 hover:underline">Add a signal</Link> to get started.
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-gray-100 text-left">
-                {['Symbol','Qty','Avg Entry','LTP','Unrealised P&L','SL','Target','Status'].map(h => (
-                  <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {active.slice(0, 8).map(pos => {
-                const livePos = liveMap.get(pos.id)
-                return (
-                  <tr key={pos.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
-                    <td className="px-5 py-3 font-medium text-gray-900">{pos.symbol}</td>
-                    <td className="px-5 py-3 text-gray-600">{pos.quantity}</td>
-                    <td className="px-5 py-3 text-gray-600">{pos.avgEntryPrice?.toFixed(2) ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-900 font-medium">
-                      {livePos?.ltp != null ? `₹${livePos.ltp.toFixed(2)}` : '—'}
-                    </td>
-                    <td className="px-5 py-3">
-                      <span className={pnlCls(livePos?.unrealisedPnl ?? null)}>
-                        {pnlStr(livePos?.unrealisedPnl ?? null)}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3 text-gray-600">{pos.signalStopLoss?.toFixed(2) ?? '—'}</td>
-                    <td className="px-5 py-3 text-gray-600">{pos.signalTarget?.toFixed(2) ?? '—'}</td>
-                    <td className="px-5 py-3">
-                      <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-100 text-left">
+                  {['Symbol','Qty','Avg Entry','LTP','Unrealised P&L','SL','Target','Status'].map(h => (
+                    <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {active.slice(0, 8).map(pos => {
+                  const livePos = liveMap.get(pos.id)
+                  return (
+                    <tr key={pos.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
+                      <td className="px-5 py-3 font-medium text-gray-900 whitespace-nowrap">{pos.symbol}</td>
+                      <td className="px-5 py-3 text-gray-600">{pos.quantity}</td>
+                      <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{pos.avgEntryPrice?.toFixed(2) ?? '—'}</td>
+                      <td className="px-5 py-3 text-gray-900 font-medium whitespace-nowrap">
+                        {livePos?.ltp != null ? `₹${livePos.ltp.toFixed(2)}` : '—'}
+                      </td>
+                      <td className="px-5 py-3 whitespace-nowrap">
+                        <span className={pnlCls(livePos?.unrealisedPnl ?? null)}>
+                          {pnlStr(livePos?.unrealisedPnl ?? null)}
+                        </span>
+                      </td>
+                      <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{pos.signalStopLoss?.toFixed(2) ?? '—'}</td>
+                      <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{pos.signalTarget?.toFixed(2) ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

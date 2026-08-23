@@ -24,7 +24,7 @@ export function OrdersPage() {
   })
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-950">Orders</h1>
         <p className="text-sm text-gray-500">All entry and exit orders placed via Zerodha</p>
@@ -36,6 +36,7 @@ export function OrdersPage() {
         ) : orders.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400">No orders yet</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
@@ -69,6 +70,7 @@ export function OrdersPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

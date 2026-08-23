@@ -54,14 +54,14 @@ export function HistoryPage() {
   ]
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-950">History</h1>
         <p className="text-sm text-gray-500">Closed positions and trade outcomes</p>
       </div>
 
       {/* Summary cards */}
-      <div className="mb-6 grid grid-cols-3 gap-4">
+      <div className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <div className="rounded-xl border border-gray-200 bg-white p-4">
           <p className="text-xs text-gray-500">Total Realised P&L</p>
           <p className={`mt-1 text-xl font-semibold ${totalPnl >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
@@ -112,7 +112,7 @@ export function HistoryPage() {
       )}
 
       {/* Filter pills */}
-      <div className="mb-4 flex gap-2">
+      <div className="mb-4 flex flex-wrap gap-2">
         {FILTERS.map(f => (
           <button key={f.value} onClick={() => setFilter(f.value)}
             className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
@@ -132,6 +132,7 @@ export function HistoryPage() {
         ) : filtered.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400">No closed trades yet</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
@@ -163,6 +164,7 @@ export function HistoryPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

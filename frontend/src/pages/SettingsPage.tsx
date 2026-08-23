@@ -160,7 +160,7 @@ export function SettingsPage() {
   const handleSubmit = (e: FormEvent) => { e.preventDefault(); setError(''); update.mutate() }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-950">Settings</h1>
         <p className="text-sm text-gray-500">Configure your trading preferences and connections</p>
@@ -169,7 +169,7 @@ export function SettingsPage() {
       {/* Account Overview — read-only, outside the save form */}
       <div className="mb-6 max-w-2xl rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="mb-4 text-sm font-semibold text-gray-900">Account Overview</h2>
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-3">
           <div>
             <p className="text-xs text-gray-500">Available Margin</p>
             {summary?.availableMargin != null ? (
@@ -209,7 +209,7 @@ export function SettingsPage() {
         {/* Trading config */}
         <div className="rounded-xl border border-gray-200 bg-white p-6">
           <h2 className="mb-5 text-sm font-semibold text-gray-900">Trading Configuration</h2>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Max Positions" hint="Maximum simultaneous open positions (1–50)">
               <input type="number" min={1} max={50} value={form.maxPositions}
                 onChange={set('maxPositions')} className={inputCls} />
@@ -238,7 +238,7 @@ export function SettingsPage() {
 
         {/* Zerodha */}
         <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-gray-900">Zerodha Connection</h2>
             <div className="flex items-center gap-3">
               {config?.zerodhaConnected
@@ -265,7 +265,7 @@ export function SettingsPage() {
               zerodhaMsg.type === 'success' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
             }`}>{zerodhaMsg.text}</p>
           )}
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="TOTP Secret (optional)"
               hint={config?.hasTotpSecret
                 ? 'TOTP secret saved. Enter to replace, or leave blank.'
@@ -279,7 +279,7 @@ export function SettingsPage() {
 
         {/* Telegram */}
         <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <div className="mb-5 flex items-center justify-between">
+          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-sm font-semibold text-gray-900">Telegram Notifications</h2>
             {form.telegramChatId && (
               <button type="button" onClick={() => telegramTest.mutate()}

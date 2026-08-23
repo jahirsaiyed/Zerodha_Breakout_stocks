@@ -96,8 +96,8 @@ export function SignalsPage() {
   const inputCls = 'w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400'
 
   return (
-    <div className="p-8">
-      <div className="mb-6 flex items-center justify-between">
+    <div className="p-4 sm:p-8">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-950">Signals</h1>
           <p className="text-sm text-gray-500">Manage your trading signals</p>
@@ -171,6 +171,7 @@ export function SignalsPage() {
         ) : signals.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400">No signals yet. Add one above.</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
@@ -267,6 +268,7 @@ export function SignalsPage() {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

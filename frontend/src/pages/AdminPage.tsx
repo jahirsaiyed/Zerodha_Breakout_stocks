@@ -50,7 +50,7 @@ export function AdminPage() {
     setForm(f => ({ ...f, [k]: e.target.value }))
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       {/* System Health */}
       {health && (
         <div className="mb-8 rounded-xl border border-gray-200 bg-white p-6">
@@ -102,7 +102,7 @@ export function AdminPage() {
         </div>
       )}
 
-      <div className="mb-6 flex items-center justify-between">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-950">User Management</h1>
           <p className="text-sm text-gray-500">Admin — manage system users</p>
@@ -155,6 +155,7 @@ export function AdminPage() {
         {isLoading ? (
           <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
@@ -193,6 +194,7 @@ export function AdminPage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
