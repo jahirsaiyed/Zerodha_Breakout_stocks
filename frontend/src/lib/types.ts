@@ -41,6 +41,8 @@ export interface UserConfig {
   hasBotToken: boolean
   botName: string | null
   botUsername: string | null
+  marginUsagePercent: number
+  marginUsageFixedLimit: number | null
 }
 
 export interface AccountSummary {

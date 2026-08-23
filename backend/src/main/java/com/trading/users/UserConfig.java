@@ -30,6 +30,13 @@ public class UserConfig {
 
     @Builder.Default
     @Column(name = "order_expiry_days", nullable = false) private Integer orderExpiryDays = 5;
+
+    @Builder.Default
+    @Column(name = "margin_usage_percent", nullable = false)
+    private BigDecimal marginUsagePercent = new BigDecimal("100");
+
+    @Column(name = "margin_usage_fixed_limit")
+    private BigDecimal marginUsageFixedLimit;
     @Column(name = "zerodha_access_token") private String zerodhaAccessToken; // stored encrypted
     @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
     @Column(name = "telegram_chat_id") private String telegramChatId;

@@ -83,6 +83,92 @@ class PositionSizingServiceTest {
     }
 
     @Test
+    @DisplayName("EQUAL respects marginUsagePercent cap")
+    void calculate_equal_respectsMarginUsagePercent() {
+        UserConfig config = UserConfig.builder()
+                .positionSizingMethod(PositionSizingMethod.EQUAL)
+                .positionSizingValue(BigDecimal.ZERO)
+                .maxPositions(5)
+                .marginUsagePercent(new BigDecimal("50"))
+                .build();
+        BigDecimal entry = BigDecimal.valueOf(500);
+        BigDecimal margin = BigDecimal.valueOf(100_000);
+
+        // effectiveMargin = 100000 * 50% = 50000; allocated = 50000 / 5 = 10000; qty = floor(10000 / 500) = 20
+        int qty = sizingService.calculate(config, entry, BigDecimal.valueOf(450), margin);
+        assertThat(qty).isEqualTo(20);
+    }
+
+    @Test
+    @DisplayName("RISK_BASED respects marginUsagePercent cap")
+    void calculate_riskBased_respectsMarginUsagePercent() {
+        UserConfig config = UserConfig.builder()
+                .positionSizingMethod(PositionSizingMethod.RISK_BASED)
+                .positionSizingValue(BigDecimal.valueOf(2.0))
+                .maxPositions(5)
+                .marginUsagePercent(new BigDecimal("50"))
+                .build();
+        BigDecimal entry  = BigDecimal.valueOf(200);
+        BigDecimal sl     = BigDecimal.valueOf(190); // riskPerShare=10
+        BigDecimal margin = BigDecimal.valueOf(100_000);
+
+        // effectiveMargin = 50000; riskAmount = 50000 * 2/100 = 1000; qty = floor(1000 / 10) = 100
+        int qty = sizingService.calculate(config, entry, sl, margin);
+        assertThat(qty).isEqualTo(100);
+    }
+
+    @Test
+    @DisplayName("fixed limit alone caps effective margin (percent=100)")
+    void calculate_fixedLimit_capsMargin() {
+        UserConfig config = UserConfig.builder()
+                .positionSizingMethod(PositionSizingMethod.EQUAL)
+                .positionSizingValue(BigDecimal.ZERO)
+                .maxPositions(1)
+                .marginUsagePercent(new BigDecimal("100"))
+                .marginUsageFixedLimit(new BigDecimal("30000"))
+                .build();
+        BigDecimal margin = BigDecimal.valueOf(100_000);
+
+        // effectiveMargin = min(100000, 30000) = 30000; qty = floor(30000 / 500) = 60
+        int qty = sizingService.calculate(config, BigDecimal.valueOf(500), BigDecimal.valueOf(450), margin);
+        assertThat(qty).isEqualTo(60);
+    }
+
+    @Test
+    @DisplayName("fixed limit is tighter than percent cap — fixed limit wins")
+    void calculate_fixedLimitTighterThanPercent() {
+        UserConfig config = UserConfig.builder()
+                .positionSizingMethod(PositionSizingMethod.EQUAL)
+                .positionSizingValue(BigDecimal.ZERO)
+                .maxPositions(1)
+                .marginUsagePercent(new BigDecimal("50"))
+                .marginUsageFixedLimit(new BigDecimal("30000"))
+                .build();
+        BigDecimal margin = BigDecimal.valueOf(100_000);
+
+        // pct cap = 50000; fixed cap = 30000 → effective = 30000; qty = floor(30000 / 500) = 60
+        int qty = sizingService.calculate(config, BigDecimal.valueOf(500), BigDecimal.valueOf(450), margin);
+        assertThat(qty).isEqualTo(60);
+    }
+
+    @Test
+    @DisplayName("percent cap is tighter than fixed limit — percent cap wins")
+    void calculate_percentCapTighterThanFixedLimit() {
+        UserConfig config = UserConfig.builder()
+                .positionSizingMethod(PositionSizingMethod.EQUAL)
+                .positionSizingValue(BigDecimal.ZERO)
+                .maxPositions(1)
+                .marginUsagePercent(new BigDecimal("50"))
+                .marginUsageFixedLimit(new BigDecimal("80000"))
+                .build();
+        BigDecimal margin = BigDecimal.valueOf(100_000);
+
+        // pct cap = 50000; fixed cap = 80000 → effective = 50000; qty = floor(50000 / 500) = 100
+        int qty = sizingService.calculate(config, BigDecimal.valueOf(500), BigDecimal.valueOf(450), margin);
+        assertThat(qty).isEqualTo(100);
+    }
+
+    @Test
     @DisplayName("EQUAL floors down when margin is not cleanly divisible")
     void calculate_equalNonDivisible_floorsDown() {
         UserConfig config = configWithMethod(PositionSizingMethod.EQUAL, 0, 3);

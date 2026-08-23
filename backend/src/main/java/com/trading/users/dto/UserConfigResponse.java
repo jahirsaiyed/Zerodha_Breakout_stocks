@@ -12,5 +12,7 @@ public record UserConfigResponse(
     Boolean hasTotpSecret,
     Boolean hasBotToken,
     String botName,
-    String botUsername
+    String botUsername,
+    BigDecimal marginUsagePercent,
+    BigDecimal marginUsageFixedLimit
 ) {}

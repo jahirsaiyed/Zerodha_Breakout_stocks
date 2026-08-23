@@ -23,14 +23,21 @@ public class PositionSizingService {
 
     public int calculate(UserConfig config, BigDecimal entryPrice,
                          BigDecimal stopLoss, BigDecimal availableMargin) {
+        BigDecimal usageFraction = config.getMarginUsagePercent()
+                .divide(BigDecimal.valueOf(100), 6, RoundingMode.DOWN);
+        BigDecimal effectiveMargin = availableMargin.multiply(usageFraction);
+        if (config.getMarginUsageFixedLimit() != null) {
+            effectiveMargin = effectiveMargin.min(config.getMarginUsageFixedLimit());
+        }
+
         BigDecimal allocated = switch (config.getPositionSizingMethod()) {
-            case EQUAL -> availableMargin.divide(
+            case EQUAL -> effectiveMargin.divide(
                     BigDecimal.valueOf(config.getMaxPositions()), 2, RoundingMode.DOWN);
             case FIXED -> config.getPositionSizingValue();
             case RISK_BASED -> {
                 BigDecimal riskFraction = config.getPositionSizingValue()
                         .divide(BigDecimal.valueOf(100), 6, RoundingMode.DOWN);
-                BigDecimal riskAmount = availableMargin.multiply(riskFraction);
+                BigDecimal riskAmount = effectiveMargin.multiply(riskFraction);
                 BigDecimal riskPerShare = entryPrice.subtract(stopLoss);
                 if (riskPerShare.compareTo(BigDecimal.ZERO) <= 0) yield BigDecimal.ZERO;
                 // For RISK_BASED, allocated = riskAmount / riskPerShare gives qty directly
