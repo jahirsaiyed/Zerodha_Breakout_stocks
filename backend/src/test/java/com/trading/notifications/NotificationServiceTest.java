@@ -54,6 +54,7 @@ class NotificationServiceTest {
         Position pos = buildPosition(10L, user);
         when(positionRepository.findById(10L)).thenReturn(Optional.of(pos));
         when(userConfigRepository.findByUser_Id(1L)).thenReturn(Optional.of(configWithChatId));
+        when(telegramClient.sendMessage("12345", "Hello RELIANCE")).thenReturn("12345");
 
         notificationService.notifyForPosition(10L, "Hello RELIANCE");
 
@@ -88,6 +89,7 @@ class NotificationServiceTest {
     @DisplayName("notifyUser sends message when chatId is set")
     void notifyUser_withChatId_sendsTelegram() {
         when(userConfigRepository.findByUser_Id(1L)).thenReturn(Optional.of(configWithChatId));
+        when(telegramClient.sendMessage("12345", "Direct message")).thenReturn("12345");
 
         notificationService.notifyUser(1L, "Direct message");
 
@@ -113,6 +115,42 @@ class NotificationServiceTest {
         notificationService.notifyUser(99L, "Direct message");
 
         verify(telegramClient, never()).sendMessage(anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("notifyUser auto-updates stored chatId when Telegram signals supergroup migration")
+    void notifyUser_supergroupMigration_updatesStoredChatId() {
+        when(userConfigRepository.findByUser_Id(1L)).thenReturn(Optional.of(configWithChatId));
+        // Telegram returns the new supergroup ID after migration
+        when(telegramClient.sendMessage("12345", "Alert")).thenReturn("-1001234567890");
+
+        notificationService.notifyUser(1L, "Alert");
+
+        verify(userConfigRepository).save(configWithChatId);
+        // Verify the config was updated with the new ID
+        assert configWithChatId.getTelegramChatId().equals("-1001234567890");
+    }
+
+    @Test
+    @DisplayName("notifyUser does not update config when chatId is unchanged")
+    void notifyUser_noMigration_doesNotSaveConfig() {
+        when(userConfigRepository.findByUser_Id(1L)).thenReturn(Optional.of(configWithChatId));
+        when(telegramClient.sendMessage("12345", "Alert")).thenReturn("12345");
+
+        notificationService.notifyUser(1L, "Alert");
+
+        verify(userConfigRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("notifyUser does not update config when delivery fails")
+    void notifyUser_deliveryFailed_doesNotSaveConfig() {
+        when(userConfigRepository.findByUser_Id(1L)).thenReturn(Optional.of(configWithChatId));
+        when(telegramClient.sendMessage("12345", "Alert")).thenReturn(null);
+
+        notificationService.notifyUser(1L, "Alert");
+
+        verify(userConfigRepository, never()).save(any());
     }
 
     private Position buildPosition(Long id, User owner) {
