@@ -102,7 +102,8 @@ public class TelegramBotService {
         long lastId = lastUpdateIdByUser.getOrDefault(userId, 0L);
 
         String url = telegramProperties.getBaseUrl() + "/bot" + token
-                + "/getUpdates?offset=" + (lastId + 1) + "&timeout=0&limit=100";
+                + "/getUpdates?offset=" + (lastId + 1) + "&timeout=0&limit=100"
+                + "&allowed_updates=[\"message\",\"channel_post\",\"my_chat_member\",\"chat_member\"]";
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) return;
@@ -125,10 +126,11 @@ public class TelegramBotService {
     }
 
     private void recordChat(Long userId, JsonNode update) {
+        // Check all update types that carry chat metadata
         JsonNode chat = update.path("message").path("chat");
-        if (chat.isMissingNode()) {
-            chat = update.path("channel_post").path("chat");
-        }
+        if (chat.isMissingNode()) chat = update.path("channel_post").path("chat");
+        if (chat.isMissingNode()) chat = update.path("my_chat_member").path("chat");
+        if (chat.isMissingNode()) chat = update.path("chat_member").path("chat");
         if (chat.isMissingNode()) return;
 
         String chatId    = String.valueOf(chat.path("id").asLong());
