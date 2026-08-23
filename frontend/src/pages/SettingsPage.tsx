@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
-import type { UserConfig } from '../lib/types'
+import type { UserConfig, AccountSummary, LivePosition } from '../lib/types'
 import { Badge } from '../components/Badge'
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -31,6 +31,20 @@ export function SettingsPage() {
   const { data: config } = useQuery<UserConfig>({
     queryKey: ['config'],
     queryFn: () => api.get('/users/me/config').then(r => r.data.data),
+  })
+
+  const { data: summary } = useQuery<AccountSummary>({
+    queryKey: ['account-summary'],
+    queryFn: () => api.get('/users/me/account-summary').then(r => r.data.data),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const { data: livePositions = [] } = useQuery<LivePosition[]>({
+    queryKey: ['positions-live'],
+    queryFn: () => api.get('/portfolio/positions/live').then(r => r.data),
+    refetchInterval: 60_000,
+    staleTime: 30_000,
   })
 
   const [form, setForm] = useState({
@@ -61,6 +75,7 @@ export function SettingsPage() {
     if (zerodha === 'connected') {
       setZerodhaMsg({ type: 'success', text: 'Zerodha connected successfully.' })
       qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['account-summary'] })
       setSearchParams({}, { replace: true })
     } else if (zerodha === 'error') {
       const reason = searchParams.get('reason')
@@ -98,6 +113,7 @@ export function SettingsPage() {
     mutationFn: () => api.delete('/zerodha/disconnect'),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['account-summary'] })
       setZerodhaMsg({ type: 'success', text: 'Zerodha disconnected.' })
     },
   })
@@ -148,6 +164,45 @@ export function SettingsPage() {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-gray-950">Settings</h1>
         <p className="text-sm text-gray-500">Configure your trading preferences and connections</p>
+      </div>
+
+      {/* Account Overview — read-only, outside the save form */}
+      <div className="mb-6 max-w-2xl rounded-xl border border-gray-200 bg-white p-6">
+        <h2 className="mb-4 text-sm font-semibold text-gray-900">Account Overview</h2>
+        <div className="grid grid-cols-3 gap-6">
+          <div>
+            <p className="text-xs text-gray-500">Available Margin</p>
+            {summary?.availableMargin != null ? (
+              <p className="mt-1 text-xl font-semibold text-gray-950">
+                ₹{summary.availableMargin.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </p>
+            ) : (
+              <p className="mt-1 text-xl font-semibold text-gray-400">—</p>
+            )}
+            {!config?.zerodhaConnected && (
+              <p className="mt-0.5 text-xs text-gray-400">Connect Zerodha to see margin</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Positions Used</p>
+            <p className="mt-1 text-xl font-semibold text-gray-950">
+              {summary != null ? `${summary.activePositions} / ${summary.maxPositions}` : '—'}
+            </p>
+            <p className="mt-0.5 text-xs text-gray-400">active / max allowed</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-500">Open P&L</p>
+            {(() => {
+              const total = livePositions.reduce((sum, p) => sum + (p.unrealisedPnl ?? 0), 0)
+              const hasLive = livePositions.length > 0
+              if (!hasLive) return <p className="mt-1 text-xl font-semibold text-gray-400">—</p>
+              const cls = total >= 0 ? 'text-emerald-600' : 'text-red-600'
+              const str = (total >= 0 ? '+' : '') + '₹' + total.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+              return <p className={`mt-1 text-xl font-semibold ${cls}`}>{str}</p>
+            })()}
+            <p className="mt-0.5 text-xs text-gray-400">unrealised across active positions</p>
+          </div>
+        </div>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6 max-w-2xl">

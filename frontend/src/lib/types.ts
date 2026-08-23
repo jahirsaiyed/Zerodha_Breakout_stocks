@@ -40,6 +40,13 @@ export interface UserConfig {
   hasTotpSecret: boolean
 }
 
+export interface AccountSummary {
+  availableMargin: number | null
+  activePositions: number
+  maxPositions: number
+  positionSizingValue: number
+}
+
 export interface AdminUser {
   id: number
   name: string
