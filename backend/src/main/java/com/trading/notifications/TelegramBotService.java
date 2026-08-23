@@ -23,7 +23,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Polls Telegram for bot commands and routes them to the appropriate handler.
@@ -36,6 +38,9 @@ import java.util.Optional;
  *
  * <p>User lookup: the {@code from.id} in each Telegram message is matched against
  * {@code user_configs.telegram_chat_id}. Commands from unknown chat IDs are silently ignored.
+ *
+ * <p>Chat discovery: each update is inspected for chat metadata (id, title, type) and
+ * stored in {@link #discoveredChats} so the UI can present a chat picker.
  */
 @Slf4j
 @Service
@@ -49,6 +54,9 @@ public class TelegramBotService {
     private final SignalRepository       signalRepository;
     private final RestTemplate           restTemplate;
     private final ObjectMapper           objectMapper = new ObjectMapper();
+
+    /** chatId → TelegramChatDto, populated as updates arrive. */
+    private final Map<String, TelegramChatDto> discoveredChats = new ConcurrentHashMap<>();
 
     private long lastUpdateId = 0;
 
@@ -86,11 +94,53 @@ public class TelegramBotService {
             for (JsonNode update : root.path("result")) {
                 long updateId = update.path("update_id").asLong();
                 if (updateId > lastUpdateId) lastUpdateId = updateId;
+                recordChat(update);
                 processUpdate(update);
             }
         } catch (Exception e) {
             log.debug("Telegram poll error: {}", e.getMessage());
         }
+    }
+
+    /**
+     * Extracts chat metadata from an update and stores it in {@link #discoveredChats}.
+     * Handles both {@code message} and {@code channel_post} update types.
+     */
+    private void recordChat(JsonNode update) {
+        JsonNode chat = update.path("message").path("chat");
+        if (chat.isMissingNode()) {
+            chat = update.path("channel_post").path("chat");
+        }
+        if (chat.isMissingNode()) return;
+
+        String chatId = String.valueOf(chat.path("id").asLong());
+        String chatType = chat.path("type").asText("private");
+        String chatTitle = resolveChatTitle(chat, chatType);
+
+        discoveredChats.put(chatId, new TelegramChatDto(chatId, chatTitle, chatType));
+    }
+
+    private String resolveChatTitle(JsonNode chat, String chatType) {
+        if (!chatType.equals("private")) {
+            String title = chat.path("title").asText("");
+            if (!title.isBlank()) return title;
+        }
+        String firstName = chat.path("first_name").asText("");
+        String lastName  = chat.path("last_name").asText("");
+        String username  = chat.path("username").asText("");
+        String fullName  = (firstName + " " + lastName).trim();
+        if (!fullName.isBlank()) return fullName;
+        if (!username.isBlank()) return "@" + username;
+        return chatType;
+    }
+
+    /**
+     * Returns the list of Telegram chats discovered from bot updates so far.
+     * This list is in-memory and resets on application restart.
+     * Users can repopulate it by sending any message to the bot.
+     */
+    public List<TelegramChatDto> getDiscoveredChats() {
+        return List.copyOf(discoveredChats.values());
     }
 
     private void processUpdate(JsonNode update) {

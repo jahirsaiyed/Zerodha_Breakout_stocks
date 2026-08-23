@@ -3,7 +3,7 @@ import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import api from '../lib/api'
-import type { UserConfig, AccountSummary, LivePosition } from '../lib/types'
+import type { UserConfig, AccountSummary, LivePosition, TelegramChat } from '../lib/types'
 import { Badge } from '../components/Badge'
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
@@ -44,6 +44,12 @@ export function SettingsPage() {
     queryKey: ['positions-live'],
     queryFn: () => api.get('/portfolio/positions/live').then(r => r.data),
     refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+
+  const { data: telegramChats = [] } = useQuery<TelegramChat[]>({
+    queryKey: ['telegram-chats'],
+    queryFn: () => api.get('/users/me/telegram/chats').then(r => r.data.data),
     staleTime: 30_000,
   })
 
@@ -297,10 +303,27 @@ export function SettingsPage() {
                 : 'bg-red-50 text-red-700'
             }`}>{telegramTestMsg}</p>
           )}
-          <Field label="Chat ID" hint="Your Telegram chat ID for trade alerts">
-            <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
-              placeholder="e.g. 123456789" className={inputCls} />
-          </Field>
+          {telegramChats.length > 0 ? (
+            <Field label="Notification Chat" hint="Select the Telegram chat or channel for trade alerts">
+              <select value={form.telegramChatId} onChange={set('telegramChatId')} className={inputCls}>
+                <option value="">— Select a chat —</option>
+                {telegramChats.map(chat => (
+                  <option key={chat.chatId} value={chat.chatId}>
+                    {chat.chatTitle} ({chat.chatType})
+                  </option>
+                ))}
+                {form.telegramChatId && !telegramChats.some(c => c.chatId === form.telegramChatId) && (
+                  <option value={form.telegramChatId}>{form.telegramChatId} (current)</option>
+                )}
+              </select>
+            </Field>
+          ) : (
+            <Field label="Chat ID"
+              hint="Send any message to the bot in your desired chat or channel — it will appear here as a selectable option. Or enter the ID manually.">
+              <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
+                placeholder="e.g. 123456789" className={inputCls} />
+            </Field>
+          )}
         </div>
 
         <div className="flex items-center gap-3">

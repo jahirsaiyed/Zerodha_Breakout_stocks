@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.auth.JwtUtil;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.notifications.NotificationService;
+import com.trading.notifications.TelegramBotService;
+import com.trading.notifications.TelegramChatDto;
 import com.trading.portfolio.PortfolioDbService;
 import com.trading.users.dto.UserResponse;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +18,8 @@ import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
+
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -38,6 +42,7 @@ class UserControllerTest {
     @MockBean BrokerAdapterFactory brokerAdapterFactory;
     @MockBean PortfolioDbService portfolioDbService;
     @MockBean JwtUtil jwtUtil;
+    @MockBean TelegramBotService telegramBotService;
 
     // ── POST /me/password ─────────────────────────────────────────────────────
 
@@ -123,6 +128,49 @@ class UserControllerTest {
     @DisplayName("POST /me/telegram/test requires authentication")
     void testTelegram_unauthenticated_returns403() throws Exception {
         mockMvc.perform(post("/api/users/me/telegram/test"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── GET /me/telegram/chats ────────────────────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "alice@test.com")
+    @DisplayName("GET /me/telegram/chats returns discovered chats from bot service")
+    void getTelegramChats_withChats_returnsList() throws Exception {
+        List<TelegramChatDto> chats = List.of(
+                new TelegramChatDto("111", "My Group", "group"),
+                new TelegramChatDto("222", "Alice", "private")
+        );
+        when(telegramBotService.getDiscoveredChats()).thenReturn(chats);
+
+        mockMvc.perform(get("/api/users/me/telegram/chats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.length()").value(2))
+                .andExpect(jsonPath("$.data[0].chatId").value("111"))
+                .andExpect(jsonPath("$.data[0].chatTitle").value("My Group"))
+                .andExpect(jsonPath("$.data[0].chatType").value("group"))
+                .andExpect(jsonPath("$.data[1].chatId").value("222"))
+                .andExpect(jsonPath("$.data[1].chatTitle").value("Alice"))
+                .andExpect(jsonPath("$.data[1].chatType").value("private"));
+    }
+
+    @Test
+    @WithMockUser(username = "alice@test.com")
+    @DisplayName("GET /me/telegram/chats returns empty list when no chats discovered yet")
+    void getTelegramChats_noChats_returnsEmptyList() throws Exception {
+        when(telegramBotService.getDiscoveredChats()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/users/me/telegram/chats"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.length()").value(0));
+    }
+
+    @Test
+    @DisplayName("GET /me/telegram/chats requires authentication")
+    void getTelegramChats_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(get("/api/users/me/telegram/chats"))
                 .andExpect(status().isForbidden());
     }
 }

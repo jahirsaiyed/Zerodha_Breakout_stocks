@@ -82,6 +82,12 @@ export interface Order {
   updatedAt: string
 }
 
+export interface TelegramChat {
+  chatId: string
+  chatTitle: string
+  chatType: string
+}
+
 export interface HealthResponse {
   instrumentCacheSize: number
   instrumentCacheLoaded: boolean
