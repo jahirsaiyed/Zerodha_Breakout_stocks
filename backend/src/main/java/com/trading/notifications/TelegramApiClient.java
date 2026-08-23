@@ -15,13 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Sends messages to a Telegram chat via the Bot API.
- *
- * <p>Two variants:
- * <ul>
- *   <li>{@link #sendMessage(String, String, String)} — explicit token, used for per-user bots</li>
- *   <li>{@link #sendMessage(String, String)} — uses the admin bot token from {@link TelegramBotConfigService}</li>
- * </ul>
+ * Sends messages to a Telegram chat via the Bot API using an explicit per-user bot token.
  *
  * <p>Exceptions are caught and logged — a failed notification must never
  * crash the portfolio engine or its event handlers.
@@ -34,14 +28,11 @@ import java.util.Map;
 @Service
 public class TelegramApiClient {
 
-    private final TelegramBotConfigService botConfigService;
     private final TelegramProperties telegramProperties;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public TelegramApiClient(TelegramBotConfigService botConfigService,
-                             TelegramProperties telegramProperties) {
-        this.botConfigService = botConfigService;
+    public TelegramApiClient(TelegramProperties telegramProperties) {
         this.telegramProperties = telegramProperties;
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
@@ -51,34 +42,14 @@ public class TelegramApiClient {
     }
 
     /**
-     * Sends a text message using an explicit bot token (per-user bot).
+     * Sends a text message to the given Telegram chat using the provided bot token.
      *
-     * @return the effective chat ID delivered to, or {@code null} on failure
+     * @return the effective chat ID the message was delivered to, or {@code null} if delivery failed
      */
     public String sendMessage(String token, String chatId, String text) {
         if (token == null || token.isBlank() || chatId == null || chatId.isBlank()) return null;
         String url = telegramProperties.getBaseUrl() + "/bot" + token + "/sendMessage";
         return doSend(url, chatId, text);
-    }
-
-    /**
-     * Sends a text message using the admin-level bot token from {@link TelegramBotConfigService}.
-     * Silently skips when no admin token is configured or the bot is disabled.
-     *
-     * @return the effective chat ID delivered to, or {@code null} on failure
-     */
-    public String sendMessage(String chatId, String text) {
-        if (chatId == null || chatId.isBlank()) return null;
-
-        return botConfigService.getActiveToken()
-                .map(token -> {
-                    String url = telegramProperties.getBaseUrl() + "/bot" + token + "/sendMessage";
-                    return doSend(url, chatId, text);
-                })
-                .orElseGet(() -> {
-                    log.debug("Telegram admin bot not configured or disabled — message skipped");
-                    return null;
-                });
     }
 
     private String doSend(String url, String chatId, String text) {

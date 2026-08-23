@@ -85,13 +85,6 @@ export interface Order {
   updatedAt: string
 }
 
-export interface TelegramBotConfig {
-  botName: string | null
-  botUsername: string | null
-  enabled: boolean
-  hasToken: boolean
-}
-
 export interface TelegramChat {
   chatId: string
   chatTitle: string
