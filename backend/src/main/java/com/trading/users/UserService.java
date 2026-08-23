@@ -80,6 +80,8 @@ public class UserService {
             cfg.setZerodhaTotpSecret(req.zerodhaTotpSecret().isBlank() ? null
                     : encryptionUtil.encrypt(req.zerodhaTotpSecret()));
         if (req.marginUsagePercent() != null) cfg.setMarginUsagePercent(req.marginUsagePercent());
+        // marginUsageFixedLimit is always applied — null explicitly clears the cap
+        cfg.setMarginUsageFixedLimit(req.marginUsageFixedLimit());
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
@@ -137,7 +139,8 @@ public class UserService {
                 cfg.getTelegramBotToken() != null,
                 cfg.getTelegramBotName(),
                 cfg.getTelegramBotUsername(),
-                cfg.getMarginUsagePercent());
+                cfg.getMarginUsagePercent(),
+                cfg.getMarginUsageFixedLimit());
     }
 
     private BotIdentity fetchBotIdentity(String rawToken) {

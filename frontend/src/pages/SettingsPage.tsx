@@ -62,6 +62,7 @@ export function SettingsPage() {
     positionSizingValue: '10000',
     orderExpiryDays: '5',
     marginUsagePercent: '100',
+    marginUsageFixedLimit: '',
     telegramChatId: '',
     zerodhaTotpSecret: '',
   })
@@ -74,6 +75,7 @@ export function SettingsPage() {
         positionSizingValue: String(config.positionSizingValue),
         orderExpiryDays: String(config.orderExpiryDays),
         marginUsagePercent: String(config.marginUsagePercent),
+        marginUsageFixedLimit: config.marginUsageFixedLimit != null ? String(config.marginUsageFixedLimit) : '',
         telegramChatId: config.telegramChatId ?? '',
         zerodhaTotpSecret: '',
       })
@@ -110,6 +112,7 @@ export function SettingsPage() {
       positionSizingValue: Number(form.positionSizingValue),
       orderExpiryDays: Number(form.orderExpiryDays),
       marginUsagePercent: Number(form.marginUsagePercent),
+      marginUsageFixedLimit: form.marginUsageFixedLimit !== '' ? Number(form.marginUsageFixedLimit) : null,
       telegramChatId: form.telegramChatId || null,
       zerodhaTotpSecret: form.zerodhaTotpSecret || null,
     }),
@@ -214,11 +217,18 @@ export function SettingsPage() {
                 <p className="mt-1 text-xl font-semibold text-gray-950">
                   ₹{summary.availableMargin.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                 </p>
-                {config?.marginUsagePercent != null && config.marginUsagePercent < 100 && (
-                  <p className="mt-0.5 text-xs text-gray-400">
-                    ₹{(summary.availableMargin * config.marginUsagePercent / 100).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} usable ({config.marginUsagePercent}%)
-                  </p>
-                )}
+                {(() => {
+                  const pctCap = summary.availableMargin * (config?.marginUsagePercent ?? 100) / 100
+                  const fixedCap = config?.marginUsageFixedLimit ?? null
+                  const usable = fixedCap != null ? Math.min(pctCap, fixedCap) : pctCap
+                  if (usable >= summary.availableMargin) return null
+                  const label = fixedCap != null && fixedCap <= pctCap ? 'fixed cap' : `${config?.marginUsagePercent}%`
+                  return (
+                    <p className="mt-0.5 text-xs text-gray-400">
+                      ₹{usable.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} usable ({label})
+                    </p>
+                  )
+                })()}
               </>
             ) : (
               <p className="mt-1 text-xl font-semibold text-gray-400">—</p>
@@ -267,6 +277,12 @@ export function SettingsPage() {
             <Field label="Margin Usage (%)" hint="Percentage of available margin the system may deploy (1–100%)">
               <input type="number" min={1} max={100} step={1} value={form.marginUsagePercent}
                 onChange={set('marginUsagePercent')} className={inputCls} />
+            </Field>
+
+            <Field label="Max Margin (₹)" hint="Optional fixed cap in ₹. Leave blank to rely on the percentage limit only.">
+              <input type="number" min={1000} step={1000} value={form.marginUsageFixedLimit}
+                onChange={set('marginUsageFixedLimit')} placeholder="e.g. 50000"
+                className={inputCls} />
             </Field>
 
             <Field label="Position Sizing Method">

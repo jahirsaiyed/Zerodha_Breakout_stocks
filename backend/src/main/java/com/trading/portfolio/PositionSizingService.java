@@ -26,6 +26,9 @@ public class PositionSizingService {
         BigDecimal usageFraction = config.getMarginUsagePercent()
                 .divide(BigDecimal.valueOf(100), 6, RoundingMode.DOWN);
         BigDecimal effectiveMargin = availableMargin.multiply(usageFraction);
+        if (config.getMarginUsageFixedLimit() != null) {
+            effectiveMargin = effectiveMargin.min(config.getMarginUsageFixedLimit());
+        }
 
         BigDecimal allocated = switch (config.getPositionSizingMethod()) {
             case EQUAL -> effectiveMargin.divide(
