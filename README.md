@@ -8,7 +8,8 @@ A private, self-hosted portfolio management system for Indian equity breakout tr
 - **Automated order placement** — Entry limit orders and GTT OCO (target + stop-loss) orders through Zerodha
 - **Live P&L** — Real-time LTP and unrealised P&L via Zerodha market quotes
 - **Trade history** — Cumulative P&L chart and closed-trade log
-- **Telegram alerts** — Entry fills, target hits, stop-loss triggers, and daily summaries
+- **Telegram alerts** — Entry fills, target hits, stop-loss triggers, and daily summaries; each user connects their own bot
+- **Margin controls** — Per-user cap on deployable margin: percentage of available margin (1–100 %), an optional fixed ₹ ceiling, or both (system uses the tighter limit)
 - **Multi-user** — Supports multiple traders, each with their own Zerodha connection and config
 - **Admin panel** — User management and system health dashboard
 
@@ -105,12 +106,31 @@ For database backups:
 | `COOKIE_SECURE` | ✓ | `true` in production (HTTPS), `false` locally |
 | `ZERODHA_API_KEY` | — | Kite Connect app API key (shared across all users) |
 | `ZERODHA_API_SECRET` | — | Kite Connect app API secret |
-| `TELEGRAM_BOT_TOKEN` | — | Bot token from @BotFather |
-| `TELEGRAM_ENABLED` | — | `true` to enable Telegram bot |
+| `TELEGRAM_ENABLED` | — | `true` to enable Telegram notifications |
 | `SHEETS_SPREADSHEET_ID` | — | Google Sheets spreadsheet ID for signal sync |
 | `SHEETS_CREDENTIALS_PATH` | — | Absolute path to service account JSON credentials file |
 
 See `.env.example` for the complete list with descriptions.
+
+> **Note:** Telegram bot tokens are configured per-user via the Settings page — there is no
+> system-level shared bot token. `TELEGRAM_ENABLED` controls whether the Telegram feature is
+> available at all; each user then connects their own bot through Settings → Your Telegram Bot.
+
+## User Configuration
+
+Each user has a personal config stored in `user_configs`. Key fields:
+
+| Field | Default | Description |
+|-------|---------|-------------|
+| `maxPositions` | 5 | Maximum simultaneous open positions (1–50) |
+| `positionSizingMethod` | `FIXED` | `FIXED`, `EQUAL`, or `RISK_BASED` |
+| `positionSizingValue` | 10000 | ₹ per position (FIXED/EQUAL) or risk % per trade (RISK_BASED) |
+| `orderExpiryDays` | 5 | Cancel unfilled limit orders after N days |
+| `marginUsagePercent` | 100 | Percentage of available Zerodha margin the system may deploy (1–100) |
+| `marginUsageFixedLimit` | null | Optional fixed ₹ ceiling. When set, effective margin = min(available × percent/100, fixedLimit) |
+
+Position sizing for `EQUAL` and `RISK_BASED` methods is applied against the **effective margin**
+(after both caps). `FIXED` is a flat ₹ amount per trade and ignores margin caps.
 
 ## API Reference
 
@@ -118,8 +138,8 @@ Interactive Swagger UI is available at `http://localhost:9006/swagger-ui.html`.
 
 Key endpoint groups:
 
-| Prefix | Description |
-|--------|-------------|
+| Endpoint | Description |
+|----------|-------------|
 | `POST /api/auth/login` | Authenticate and receive JWT cookie |
 | `DELETE /api/auth/logout` | Invalidate session |
 | `GET /api/signals` | List / manage trading signals |
@@ -128,18 +148,43 @@ Key endpoint groups:
 | `GET /api/portfolio/positions/live` | Positions with live LTP |
 | `POST /api/portfolio/positions/{id}/exit` | Manual market exit |
 | `GET /api/portfolio/orders` | Order history (paginated) |
-| `GET/PUT /api/users/me/config` | User configuration |
+| `GET /api/users/me` | Get current user profile |
+| `GET /api/users/me/config` | Get user configuration |
+| `PUT /api/users/me/config` | Update user configuration (includes margin caps) |
 | `POST /api/users/me/password` | Change password |
+| `GET /api/users/me/account-summary` | Available margin, position slot usage, sizing value |
+| `POST /api/users/me/telegram/bot` | Connect a personal Telegram bot (validates and stores token) |
+| `DELETE /api/users/me/telegram/bot` | Disconnect personal Telegram bot |
+| `POST /api/users/me/telegram/test` | Send a test Telegram message |
+| `GET /api/users/me/telegram/chats` | List Telegram chats discovered from the user's bot |
 | `GET /api/zerodha/login` | Initiate Zerodha OAuth |
 | `GET /api/zerodha/callback` | OAuth callback (Zerodha redirects here) |
 | `DELETE /api/zerodha/disconnect` | Disconnect Zerodha |
 | `GET /api/admin/users` | List all users (ADMIN only) |
+| `POST /api/admin/users` | Create a new user (ADMIN only) |
 | `GET /api/admin/health` | System health (ADMIN only) |
+| `POST /api/admin/portfolio/run-loop` | Manually trigger the portfolio scheduler loop (ADMIN only) |
+| `POST /api/admin/portfolio/check-fills` | Manually trigger order fill check (ADMIN only) |
+| `POST /api/admin/portfolio/reconcile-gtt` | Reconcile GTT orders against Zerodha (ADMIN only) |
+
+## Setting Up Telegram Notifications
+
+Telegram is configured per-user — each trader connects their own bot:
+
+1. Message **@BotFather** on Telegram and send `/newbot` to create a bot. Copy the token.
+2. In the application, go to **Settings → Your Telegram Bot** and paste the token.
+3. Start a chat with your bot (or add it to a group/channel), then send it any message.
+4. Refresh Settings → **Telegram Notifications** — the chat will appear in the dropdown.
+5. Select the chat and click **Save Changes**.
+
+The system uses `TELEGRAM_ENABLED=true` in the environment to activate the feature. Each user's
+bot token and chat ID are stored encrypted in the database; no shared bot token is required at the
+system level.
 
 ## Running Tests
 
 ```bash
-# Backend (158 tests)
+# Backend (180 tests)
 cd backend && ./mvnw test
 
 # Frontend (12 tests)
