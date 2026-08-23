@@ -141,7 +141,9 @@ class UserControllerTest {
                 new TelegramChatDto("111", "My Group", "group"),
                 new TelegramChatDto("222", "Alice", "private")
         );
-        when(telegramBotService.getDiscoveredChats()).thenReturn(chats);
+        when(userService.getUserByEmail("alice@test.com"))
+                .thenReturn(new UserResponse(1L, "Alice", "alice@test.com", "USER", true));
+        when(telegramBotService.getDiscoveredChatsForUser(1L)).thenReturn(chats);
 
         mockMvc.perform(get("/api/users/me/telegram/chats"))
                 .andExpect(status().isOk())
@@ -159,7 +161,9 @@ class UserControllerTest {
     @WithMockUser(username = "alice@test.com")
     @DisplayName("GET /me/telegram/chats returns empty list when no chats discovered yet")
     void getTelegramChats_noChats_returnsEmptyList() throws Exception {
-        when(telegramBotService.getDiscoveredChats()).thenReturn(List.of());
+        when(userService.getUserByEmail("alice@test.com"))
+                .thenReturn(new UserResponse(1L, "Alice", "alice@test.com", "USER", true));
+        when(telegramBotService.getDiscoveredChatsForUser(1L)).thenReturn(List.of());
 
         mockMvc.perform(get("/api/users/me/telegram/chats"))
                 .andExpect(status().isOk())

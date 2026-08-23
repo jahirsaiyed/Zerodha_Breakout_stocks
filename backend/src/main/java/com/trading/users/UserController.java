@@ -3,6 +3,7 @@ package com.trading.users;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
 import com.trading.common.ApiResponse;
+import com.trading.notifications.ConnectBotRequest;
 import com.trading.notifications.NotificationService;
 import com.trading.notifications.TelegramBotService;
 import com.trading.notifications.TelegramChatDto;
@@ -39,7 +40,7 @@ public class UserController {
     private final NotificationService notificationService;
     private final BrokerAdapterFactory brokerAdapterFactory;
     private final PortfolioDbService portfolioDbService;
-    private final Optional<TelegramBotService> telegramBotService;
+    private final TelegramBotService telegramBotService;
 
     @GetMapping("/me")
     @Operation(summary = "Get current user")
@@ -68,6 +69,20 @@ public class UserController {
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 
+    @PostMapping("/me/telegram/bot")
+    @Operation(summary = "Connect a personal Telegram bot by validating and storing its token")
+    public ResponseEntity<ApiResponse<UserConfigResponse>> connectBot(
+            Authentication auth, @RequestBody @Valid ConnectBotRequest req) {
+        return ResponseEntity.ok(ApiResponse.success(userService.connectUserBot(auth.getName(), req.botToken())));
+    }
+
+    @DeleteMapping("/me/telegram/bot")
+    @Operation(summary = "Disconnect the personal Telegram bot and clear its stored token")
+    public ResponseEntity<ApiResponse<Void>> disconnectBot(Authentication auth) {
+        userService.disconnectUserBot(auth.getName());
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
     @PostMapping("/me/telegram/test")
     @Operation(summary = "Send a test Telegram message to the current user")
     public ResponseEntity<ApiResponse<Void>> testTelegram(Authentication auth) {
@@ -78,11 +93,10 @@ public class UserController {
     }
 
     @GetMapping("/me/telegram/chats")
-    @Operation(summary = "List Telegram chats discovered from bot updates")
-    public ResponseEntity<ApiResponse<List<TelegramChatDto>>> getTelegramChats() {
-        List<TelegramChatDto> chats = telegramBotService
-                .map(TelegramBotService::getDiscoveredChats)
-                .orElse(List.of());
+    @Operation(summary = "List Telegram chats discovered from this user's bot updates")
+    public ResponseEntity<ApiResponse<List<TelegramChatDto>>> getTelegramChats(Authentication auth) {
+        Long userId = userService.getUserByEmail(auth.getName()).id();
+        List<TelegramChatDto> chats = telegramBotService.getDiscoveredChatsForUser(userId);
         return ResponseEntity.ok(ApiResponse.success(chats));
     }
 

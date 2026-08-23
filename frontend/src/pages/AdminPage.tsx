@@ -7,6 +7,7 @@ import type { AdminUser, HealthResponse } from '../lib/types'
 import { Badge } from '../components/Badge'
 import { useAuth } from '../contexts/AuthContext'
 
+
 export function AdminPage() {
   const { user } = useAuth()
   const qc = useQueryClient()
@@ -51,6 +52,7 @@ export function AdminPage() {
 
   return (
     <div className="p-4 sm:p-8">
+
       {/* System Health */}
       {health && (
         <div className="mb-8 rounded-xl border border-gray-200 bg-white p-6">
@@ -102,6 +104,7 @@ export function AdminPage() {
         </div>
       )}
 
+      {/* User Management */}
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-950">User Management</h1>

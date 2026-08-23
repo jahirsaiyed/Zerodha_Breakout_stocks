@@ -1,13 +1,21 @@
 package com.trading.users;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.common.EncryptionUtil;
+import com.trading.notifications.TelegramProperties;
 import com.trading.users.dto.*;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestTemplate;
+
 import java.util.List;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class UserService {
@@ -15,6 +23,9 @@ public class UserService {
     private final UserConfigRepository userConfigRepository;
     private final PasswordEncoder passwordEncoder;
     private final EncryptionUtil encryptionUtil;
+    private final TelegramProperties telegramProperties;
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Transactional
     public UserResponse createUser(CreateUserRequest req) {
@@ -72,6 +83,32 @@ public class UserService {
     }
 
     @Transactional
+    public UserConfigResponse connectUserBot(String email, String rawToken) {
+        if (rawToken == null || rawToken.isBlank()) {
+            throw new IllegalArgumentException("Bot token must not be blank");
+        }
+        BotIdentity identity = fetchBotIdentity(rawToken.trim());
+        UserConfig cfg = userConfigRepository.findByUser_Email(email)
+                .orElseThrow(() -> new IllegalArgumentException("Config not found for: " + email));
+        cfg.setTelegramBotToken(encryptionUtil.encrypt(rawToken.trim()));
+        cfg.setTelegramBotUsername(identity.username());
+        cfg.setTelegramBotName(identity.name());
+        log.info("User {} connected Telegram bot: @{} ({})", email, identity.username(), identity.name());
+        return toConfigResponse(userConfigRepository.save(cfg));
+    }
+
+    @Transactional
+    public void disconnectUserBot(String email) {
+        UserConfig cfg = userConfigRepository.findByUser_Email(email)
+                .orElseThrow(() -> new IllegalArgumentException("Config not found for: " + email));
+        log.info("User {} disconnected Telegram bot (was @{})", email, cfg.getTelegramBotUsername());
+        cfg.setTelegramBotToken(null);
+        cfg.setTelegramBotUsername(null);
+        cfg.setTelegramBotName(null);
+        userConfigRepository.save(cfg);
+    }
+
+    @Transactional
     public void changePassword(String email, String currentPassword, String newPassword) {
         User user = findByEmail(email);
         if (!passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
@@ -95,6 +132,39 @@ public class UserService {
                 cfg.getMaxPositions(), cfg.getPositionSizingMethod().name(),
                 cfg.getPositionSizingValue(), cfg.getOrderExpiryDays(),
                 cfg.getTelegramChatId(), cfg.getZerodhaConnected(),
-                cfg.getZerodhaTotpSecret() != null && !cfg.getZerodhaTotpSecret().isBlank());
+                cfg.getZerodhaTotpSecret() != null && !cfg.getZerodhaTotpSecret().isBlank(),
+                cfg.getTelegramBotToken() != null,
+                cfg.getTelegramBotName(),
+                cfg.getTelegramBotUsername());
     }
+
+    private BotIdentity fetchBotIdentity(String rawToken) {
+        String url = telegramProperties.getBaseUrl() + "/bot" + rawToken + "/getMe";
+        RestTemplate restTemplate = buildRestTemplate();
+        try {
+            String response = restTemplate.getForObject(url, String.class);
+            JsonNode root = objectMapper.readTree(response);
+            if (!root.path("ok").asBoolean(false)) {
+                throw new IllegalArgumentException(
+                        "Telegram rejected the token: " + root.path("description").asText("unknown error"));
+            }
+            JsonNode result = root.path("result");
+            return new BotIdentity(result.path("username").asText(""), result.path("first_name").asText("Bot"));
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException(
+                    "Could not reach Telegram to validate the token — check the token and your network: "
+                            + e.getMessage());
+        }
+    }
+
+    private RestTemplate buildRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10_000);
+        factory.setReadTimeout(10_000);
+        return new RestTemplate(factory);
+    }
+
+    private record BotIdentity(String username, String name) {}
 }

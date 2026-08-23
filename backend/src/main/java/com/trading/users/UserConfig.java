@@ -33,6 +33,9 @@ public class UserConfig {
     @Column(name = "zerodha_access_token") private String zerodhaAccessToken; // stored encrypted
     @Column(name = "zerodha_totp_secret") private String zerodhaTotpSecret;   // stored encrypted
     @Column(name = "telegram_chat_id") private String telegramChatId;
+    @Column(name = "telegram_bot_token", length = 2000) private String telegramBotToken;
+    @Column(name = "telegram_bot_username") private String telegramBotUsername;
+    @Column(name = "telegram_bot_name") private String telegramBotName;
     @Builder.Default
     @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
 

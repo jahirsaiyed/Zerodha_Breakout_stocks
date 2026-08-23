@@ -27,6 +27,8 @@ export function SettingsPage() {
   const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const [zerodhaMsg, setZerodhaMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [botToken, setBotToken] = useState('')
+  const [botMsg, setBotMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   const { data: config } = useQuery<UserConfig>({
     queryKey: ['config'],
@@ -51,6 +53,7 @@ export function SettingsPage() {
     queryKey: ['telegram-chats'],
     queryFn: () => api.get('/users/me/telegram/chats').then(r => r.data.data),
     staleTime: 30_000,
+    enabled: config?.hasBotToken === true,
   })
 
   const [form, setForm] = useState({
@@ -137,6 +140,42 @@ export function SettingsPage() {
     onError: (e: any) => setPwMsg({ ok: false, text: e.response?.data?.error ?? 'Password change failed.' }),
   })
 
+  const connectBot = useMutation({
+    mutationFn: () => api.post('/users/me/telegram/bot', { botToken }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['telegram-chats'] })
+      setBotToken('')
+      setBotMsg({ ok: true, text: 'Bot connected successfully.' })
+      setTimeout(() => setBotMsg(null), 4000)
+    },
+    onError: (e: any) => {
+      setBotMsg({ ok: false, text: e.response?.data?.error ?? 'Failed to connect bot — check the token.' })
+    },
+  })
+
+  const disconnectBot = useMutation({
+    mutationFn: () => api.delete('/users/me/telegram/bot'),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] })
+      qc.invalidateQueries({ queryKey: ['telegram-chats'] })
+      setBotMsg({ ok: true, text: 'Bot disconnected.' })
+      setTimeout(() => setBotMsg(null), 4000)
+    },
+  })
+
+  const telegramTest = useMutation({
+    mutationFn: () => api.post('/users/me/telegram/test'),
+    onSuccess: () => {
+      setTelegramTestMsg('Test message sent!')
+      setTimeout(() => setTelegramTestMsg(''), 4000)
+    },
+    onError: () => {
+      setTelegramTestMsg('Failed to send — check your Chat ID and bot token.')
+      setTimeout(() => setTelegramTestMsg(''), 4000)
+    },
+  })
+
   const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (pwForm.next !== pwForm.confirm) {
@@ -151,18 +190,7 @@ export function SettingsPage() {
     changePassword.mutate()
   }
 
-  const telegramTest = useMutation({
-    mutationFn: () => api.post('/users/me/telegram/test'),
-    onSuccess: () => {
-      setTelegramTestMsg('Test message sent!')
-      setTimeout(() => setTelegramTestMsg(''), 4000)
-    },
-    onError: () => {
-      setTelegramTestMsg('Failed to send — check your Chat ID and bot token.')
-      setTimeout(() => setTelegramTestMsg(''), 4000)
-    },
-  })
-
+  const handleBotConnect = (e: FormEvent) => { e.preventDefault(); setBotMsg(null); connectBot.mutate() }
   const handleSubmit = (e: FormEvent) => { e.preventDefault(); setError(''); update.mutate() }
 
   return (
@@ -283,48 +311,51 @@ export function SettingsPage() {
           </div>
         </div>
 
-        {/* Telegram */}
-        <div className="rounded-xl border border-gray-200 bg-white p-6">
-          <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-gray-900">Telegram Notifications</h2>
-            {form.telegramChatId && (
-              <button type="button" onClick={() => telegramTest.mutate()}
-                disabled={telegramTest.isPending}
-                className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-500
-                           hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-60">
-                {telegramTest.isPending ? 'Sending…' : 'Send Test'}
-              </button>
+        {/* Telegram chat ID — only shown once bot is configured */}
+        {config?.hasBotToken && (
+          <div className="rounded-xl border border-gray-200 bg-white p-6">
+            <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+              <h2 className="text-sm font-semibold text-gray-900">Telegram Notifications</h2>
+              {form.telegramChatId && (
+                <button type="button" onClick={() => telegramTest.mutate()}
+                  disabled={telegramTest.isPending}
+                  className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-500
+                             hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600 disabled:opacity-60">
+                  {telegramTest.isPending ? 'Sending…' : 'Send Test'}
+                </button>
+              )}
+            </div>
+            {telegramTestMsg && (
+              <p className={`mb-4 rounded-md px-3 py-2 text-sm ${
+                telegramTestMsg.startsWith('Test')
+                  ? 'bg-emerald-50 text-emerald-700'
+                  : 'bg-red-50 text-red-700'
+              }`}>{telegramTestMsg}</p>
+            )}
+            {(telegramChats.length > 0 || form.telegramChatId) ? (
+              <Field label="Notification Chat"
+                hint="Send any message to the bot to discover more chats, or enter an ID manually in the last option.">
+                <select value={form.telegramChatId} onChange={set('telegramChatId')} className={inputCls}>
+                  <option value="">— Select a chat —</option>
+                  {telegramChats.map(chat => (
+                    <option key={chat.chatId} value={chat.chatId}>
+                      {chat.chatTitle} ({chat.chatType})
+                    </option>
+                  ))}
+                  {form.telegramChatId && !telegramChats.some(c => c.chatId === form.telegramChatId) && (
+                    <option value={form.telegramChatId}>{form.telegramChatId} (current)</option>
+                  )}
+                </select>
+              </Field>
+            ) : (
+              <Field label="Chat ID"
+                hint="Send any message to your bot in the desired chat or channel — it will appear here as a selectable option. Or enter the ID manually.">
+                <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
+                  placeholder="e.g. 123456789" autoComplete="off" className={inputCls} />
+              </Field>
             )}
           </div>
-          {telegramTestMsg && (
-            <p className={`mb-4 rounded-md px-3 py-2 text-sm ${
-              telegramTestMsg.startsWith('Test')
-                ? 'bg-emerald-50 text-emerald-700'
-                : 'bg-red-50 text-red-700'
-            }`}>{telegramTestMsg}</p>
-          )}
-          {telegramChats.length > 0 ? (
-            <Field label="Notification Chat" hint="Select the Telegram chat or channel for trade alerts">
-              <select value={form.telegramChatId} onChange={set('telegramChatId')} className={inputCls}>
-                <option value="">— Select a chat —</option>
-                {telegramChats.map(chat => (
-                  <option key={chat.chatId} value={chat.chatId}>
-                    {chat.chatTitle} ({chat.chatType})
-                  </option>
-                ))}
-                {form.telegramChatId && !telegramChats.some(c => c.chatId === form.telegramChatId) && (
-                  <option value={form.telegramChatId}>{form.telegramChatId} (current)</option>
-                )}
-              </select>
-            </Field>
-          ) : (
-            <Field label="Chat ID"
-              hint="Send any message to the bot in your desired chat or channel — it will appear here as a selectable option. Or enter the ID manually.">
-              <input type="text" value={form.telegramChatId} onChange={set('telegramChatId')}
-                placeholder="e.g. 123456789" className={inputCls} />
-            </Field>
-          )}
-        </div>
+        )}
 
         <div className="flex items-center gap-3">
           <button type="submit" disabled={update.isPending}
@@ -336,6 +367,77 @@ export function SettingsPage() {
           {error && <span className="text-sm text-red-600">{error}</span>}
         </div>
       </form>
+
+      {/* Telegram Bot — separate form, not part of main config save */}
+      <div className="mt-8 max-w-2xl rounded-xl border border-gray-200 bg-white p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold text-gray-900">Your Telegram Bot</h2>
+            <p className="mt-0.5 text-xs text-gray-400">
+              Connect your own bot to receive trade alerts. Get a token from{' '}
+              <span className="font-medium text-gray-600">@BotFather</span> on Telegram.
+            </p>
+          </div>
+          {config?.hasBotToken && (
+            <Badge label="Connected" variant="green" />
+          )}
+        </div>
+
+        {botMsg && (
+          <p className={`mb-4 rounded-md px-3 py-2 text-sm ${
+            botMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+          }`}>{botMsg.text}</p>
+        )}
+
+        {config?.hasBotToken ? (
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-indigo-600 text-sm font-bold select-none">
+                {(config.botName ?? 'B').charAt(0).toUpperCase()}
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">{config.botName ?? 'Unknown Bot'}</p>
+                {config.botUsername && (
+                  <p className="text-xs text-gray-400">@{config.botUsername}</p>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => disconnectBot.mutate()}
+              disabled={disconnectBot.isPending}
+              className="rounded-md border border-gray-200 px-3 py-1.5 text-xs text-gray-500
+                         hover:border-red-200 hover:bg-red-50 hover:text-red-600 disabled:opacity-60">
+              {disconnectBot.isPending ? 'Disconnecting…' : 'Disconnect Bot'}
+            </button>
+          </div>
+        ) : (
+          <form onSubmit={handleBotConnect} className="flex flex-wrap items-end gap-3">
+            <div className="flex-1 min-w-[260px]">
+              <label className="mb-1 block text-xs font-medium text-gray-600">Bot Token</label>
+              <input
+                type="password"
+                value={botToken}
+                onChange={e => setBotToken(e.target.value)}
+                placeholder="1234567890:AAGk…"
+                required
+                autoComplete="off"
+                className={inputCls}
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Message @BotFather → /newbot → copy the token here
+              </p>
+            </div>
+            <button
+              type="submit"
+              disabled={connectBot.isPending || !botToken.trim()}
+              className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white
+                         hover:bg-indigo-600 disabled:opacity-60">
+              {connectBot.isPending ? 'Connecting…' : 'Connect Bot'}
+            </button>
+          </form>
+        )}
+      </div>
 
       {/* Change Password (separate form — not part of config save) */}
       <form onSubmit={handlePasswordSubmit} className="mt-8 space-y-6 max-w-2xl">
