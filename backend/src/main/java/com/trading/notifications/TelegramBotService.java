@@ -11,7 +11,6 @@ import com.trading.signals.SignalStatus;
 import com.trading.users.UserConfig;
 import com.trading.users.UserConfigRepository;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -30,9 +29,9 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * Polls Telegram for bot commands and routes them to the appropriate handler.
  *
- * <p>Only active when {@code telegram.enabled=true}. Uses long-poll interval of
- * 0 seconds (returns immediately) with a 10-second fixed-delay schedule to
- * avoid excessive API calls.
+ * <p>The bot token is read from {@link TelegramBotConfigService} on every poll cycle,
+ * so the bot activates immediately after a token is configured through the admin UI
+ * without any application restart.
  *
  * <p>Supported commands: /portfolio /signals /summary /status
  *
@@ -44,32 +43,34 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Slf4j
 @Service
-@ConditionalOnProperty(name = "telegram.enabled", havingValue = "true")
 public class TelegramBotService {
 
-    private final TelegramProperties     props;
-    private final TelegramApiClient      telegramClient;
-    private final UserConfigRepository   userConfigRepository;
-    private final PositionRepository     positionRepository;
-    private final SignalRepository       signalRepository;
-    private final RestTemplate           restTemplate;
-    private final ObjectMapper           objectMapper = new ObjectMapper();
+    private final TelegramBotConfigService botConfigService;
+    private final TelegramProperties       telegramProperties;
+    private final TelegramApiClient        telegramClient;
+    private final UserConfigRepository     userConfigRepository;
+    private final PositionRepository       positionRepository;
+    private final SignalRepository         signalRepository;
+    private final RestTemplate             restTemplate;
+    private final ObjectMapper             objectMapper = new ObjectMapper();
 
     /** chatId → TelegramChatDto, populated as updates arrive. */
     private final Map<String, TelegramChatDto> discoveredChats = new ConcurrentHashMap<>();
 
     private long lastUpdateId = 0;
 
-    public TelegramBotService(TelegramProperties props,
+    public TelegramBotService(TelegramBotConfigService botConfigService,
+                              TelegramProperties telegramProperties,
                               TelegramApiClient telegramClient,
                               UserConfigRepository userConfigRepository,
                               PositionRepository positionRepository,
                               SignalRepository signalRepository) {
-        this.props               = props;
-        this.telegramClient      = telegramClient;
+        this.botConfigService     = botConfigService;
+        this.telegramProperties   = telegramProperties;
+        this.telegramClient       = telegramClient;
         this.userConfigRepository = userConfigRepository;
-        this.positionRepository  = positionRepository;
-        this.signalRepository    = signalRepository;
+        this.positionRepository   = positionRepository;
+        this.signalRepository     = signalRepository;
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -80,9 +81,11 @@ public class TelegramBotService {
     @Scheduled(fixedDelay = 10_000)
     @Transactional(readOnly = true)
     public void pollUpdates() {
-        if (!props.isEnabled() || props.getBotToken().isBlank()) return;
+        Optional<String> tokenOpt = botConfigService.getActiveToken();
+        if (tokenOpt.isEmpty()) return;
+        String token = tokenOpt.get();
 
-        String url = props.getBaseUrl() + "/bot" + props.getBotToken()
+        String url = telegramProperties.getBaseUrl() + "/bot" + token
                 + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=0&limit=100";
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
@@ -180,12 +183,10 @@ public class TelegramBotService {
     // ── Command handlers ──────────────────────────────────────────────────────
 
     private String buildPortfolioReply(Long userId) {
-        List<Position> active = positionRepository.findByUserIdAndStatus(userId, PositionStatus.ACTIVE);
+        List<Position> active  = positionRepository.findByUserIdAndStatus(userId, PositionStatus.ACTIVE);
         List<Position> pending = positionRepository.findByUserIdAndStatus(userId, PositionStatus.PENDING_ENTRY);
 
-        if (active.isEmpty() && pending.isEmpty()) {
-            return "No open positions.";
-        }
+        if (active.isEmpty() && pending.isEmpty()) return "No open positions.";
 
         StringBuilder sb = new StringBuilder("Portfolio\n─────────────────\n");
         if (!active.isEmpty()) {
@@ -245,8 +246,6 @@ public class TelegramBotService {
                 + "Time: " + Instant.now() + "\n"
                 + "Use /portfolio, /signals, or /summary for trading data.";
     }
-
-    // ── Formatting helper ─────────────────────────────────────────────────────
 
     private String fmt(BigDecimal value) {
         if (value == null) return "—";

@@ -29,6 +29,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class TelegramBotServiceTest {
 
+    @Mock TelegramBotConfigService botConfigService;
     @Mock TelegramProperties props;
     @Mock TelegramApiClient telegramClient;
     @Mock UserConfigRepository userConfigRepository;
@@ -42,11 +43,10 @@ class TelegramBotServiceTest {
 
     @BeforeEach
     void setUp() {
-        lenient().when(props.isEnabled()).thenReturn(true);
-        lenient().when(props.getBotToken()).thenReturn("bot-token");
+        lenient().when(botConfigService.getActiveToken()).thenReturn(java.util.Optional.of("bot-token"));
         lenient().when(props.getBaseUrl()).thenReturn("https://api.telegram.org");
 
-        botService = new TelegramBotService(props, telegramClient, userConfigRepository,
+        botService = new TelegramBotService(botConfigService, props, telegramClient, userConfigRepository,
                 positionRepository, signalRepository);
         ReflectionTestUtils.setField(botService, "restTemplate", restTemplate);
     }

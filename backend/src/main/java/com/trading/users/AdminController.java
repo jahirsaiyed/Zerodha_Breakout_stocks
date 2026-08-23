@@ -1,6 +1,9 @@
 package com.trading.users;
 
 import com.trading.common.ApiResponse;
+import com.trading.notifications.ConnectBotRequest;
+import com.trading.notifications.TelegramBotConfigDto;
+import com.trading.notifications.TelegramBotConfigService;
 import com.trading.portfolio.PortfolioEngine;
 import com.trading.signals.InstrumentCacheService;
 import com.trading.signals.SignalSyncLog;
@@ -33,6 +36,7 @@ public class AdminController {
     private final SignalSyncLogRepository syncLogRepository;
     private final InstrumentCacheService instrumentCacheService;
     private final PortfolioEngine portfolioEngine;
+    private final TelegramBotConfigService telegramBotConfigService;
 
     @GetMapping("/users")
     @Operation(summary = "List all users")
@@ -100,6 +104,29 @@ public class AdminController {
     @Operation(summary = "Manually trigger GTT exit reconciliation")
     public ResponseEntity<ApiResponse<Void>> reconcileGtt() {
         portfolioEngine.reconcileGttExits();
+        return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    // ── Telegram bot configuration ────────────────────────────────────────────
+
+    @GetMapping("/telegram/bot")
+    @Operation(summary = "Get current Telegram bot configuration (token is never returned)")
+    public ResponseEntity<ApiResponse<TelegramBotConfigDto>> getBotConfig() {
+        return ResponseEntity.ok(ApiResponse.success(telegramBotConfigService.getConfig()));
+    }
+
+    @PostMapping("/telegram/bot")
+    @Operation(summary = "Connect a Telegram bot by validating and storing its token")
+    public ResponseEntity<ApiResponse<TelegramBotConfigDto>> connectBot(
+            @RequestBody @Valid ConnectBotRequest req) {
+        TelegramBotConfigDto dto = telegramBotConfigService.connectBot(req.botToken());
+        return ResponseEntity.ok(ApiResponse.success(dto));
+    }
+
+    @DeleteMapping("/telegram/bot")
+    @Operation(summary = "Disconnect the Telegram bot and clear its stored token")
+    public ResponseEntity<ApiResponse<Void>> disconnectBot() {
+        telegramBotConfigService.disconnectBot();
         return ResponseEntity.ok(ApiResponse.success(null));
     }
 }

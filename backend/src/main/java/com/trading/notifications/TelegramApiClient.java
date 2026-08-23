@@ -13,11 +13,16 @@ import org.springframework.web.client.RestTemplate;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * Sends messages to a Telegram chat via the Bot API.
- * Silently skips when {@code telegram.enabled=false} or chatId is blank.
- * Exceptions are caught and logged — a failed notification must never
+ *
+ * <p>The bot token is read at runtime from {@link TelegramBotConfigService}, so it can
+ * be changed through the admin UI without restarting the application.
+ * Silently skips when no token is configured or the bot is disabled.
+ *
+ * <p>Exceptions are caught and logged — a failed notification must never
  * crash the portfolio engine or its event handlers.
  *
  * <p>Returns the effective chat ID used (which may differ from the input when
@@ -28,12 +33,16 @@ import java.util.Map;
 @Service
 public class TelegramApiClient {
 
-    private final TelegramProperties props;
+    private final TelegramBotConfigService botConfigService;
+    private final TelegramProperties telegramProperties;
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    public TelegramApiClient(TelegramProperties props) {
-        this.props = props;
+    public TelegramApiClient(TelegramBotConfigService botConfigService,
+                             TelegramProperties telegramProperties) {
+        this.botConfigService = botConfigService;
+        this.telegramProperties = telegramProperties;
+
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(5_000);
         factory.setReadTimeout(10_000);
@@ -47,14 +56,15 @@ public class TelegramApiClient {
      *         if the original group was migrated), or {@code null} if delivery failed
      */
     public String sendMessage(String chatId, String text) {
-        if (!props.isEnabled()) return null;
         if (chatId == null || chatId.isBlank()) return null;
-        if (props.getBotToken() == null || props.getBotToken().isBlank()) {
-            log.warn("Telegram bot token is not configured — cannot send message");
+
+        Optional<String> tokenOpt = botConfigService.getActiveToken();
+        if (tokenOpt.isEmpty()) {
+            log.debug("Telegram bot not configured or disabled — message skipped");
             return null;
         }
-
-        String url = props.getBaseUrl() + "/bot" + props.getBotToken() + "/sendMessage";
+        String token = tokenOpt.get();
+        String url = telegramProperties.getBaseUrl() + "/bot" + token + "/sendMessage";
 
         try {
             doPost(url, chatId, text);

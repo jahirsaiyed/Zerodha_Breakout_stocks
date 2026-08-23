@@ -12,6 +12,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.*;
@@ -21,13 +22,19 @@ import static org.mockito.Mockito.*;
 class TelegramApiClientTest {
 
     @Mock RestTemplate restTemplate;
+    @Mock TelegramBotConfigService botConfigService;
 
     private TelegramApiClient buildClient(boolean enabled, String token) {
         TelegramProperties props = new TelegramProperties();
-        props.setEnabled(enabled);
-        props.setBotToken(token);
         props.setBaseUrl("https://api.telegram.org");
-        TelegramApiClient client = new TelegramApiClient(props);
+
+        if (!enabled || token == null || token.isBlank()) {
+            lenient().when(botConfigService.getActiveToken()).thenReturn(Optional.empty());
+        } else {
+            lenient().when(botConfigService.getActiveToken()).thenReturn(Optional.of(token));
+        }
+
+        TelegramApiClient client = new TelegramApiClient(botConfigService, props);
         ReflectionTestUtils.setField(client, "restTemplate", restTemplate);
         return client;
     }

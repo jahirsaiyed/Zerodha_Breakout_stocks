@@ -60,8 +60,8 @@ sheets:
   range: ${SHEETS_RANGE:'NSE Stock break out Ideas'!A2:Q}
 
 telegram:
-  enabled: ${TELEGRAM_ENABLED:false}
-  bot-token: ${TELEGRAM_BOT_TOKEN:}
+  # Bot token and enabled flag are stored in the database and configured via the admin UI.
+  # Only the API base URL remains here as an infrastructure-level override.
   base-url: ${TELEGRAM_BASE_URL:https://api.telegram.org}
 
 springdoc:

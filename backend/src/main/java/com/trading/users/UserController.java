@@ -24,7 +24,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Optional;
+import java.util.Optional;  // used for broker adapter config lookup
 
 import static com.trading.config.OpenApiConfig.COOKIE_AUTH;
 
@@ -39,7 +39,7 @@ public class UserController {
     private final NotificationService notificationService;
     private final BrokerAdapterFactory brokerAdapterFactory;
     private final PortfolioDbService portfolioDbService;
-    private final Optional<TelegramBotService> telegramBotService;
+    private final TelegramBotService telegramBotService;
 
     @GetMapping("/me")
     @Operation(summary = "Get current user")
@@ -80,9 +80,7 @@ public class UserController {
     @GetMapping("/me/telegram/chats")
     @Operation(summary = "List Telegram chats discovered from bot updates")
     public ResponseEntity<ApiResponse<List<TelegramChatDto>>> getTelegramChats() {
-        List<TelegramChatDto> chats = telegramBotService
-                .map(TelegramBotService::getDiscoveredChats)
-                .orElse(List.of());
+        List<TelegramChatDto> chats = telegramBotService.getDiscoveredChats();
         return ResponseEntity.ok(ApiResponse.success(chats));
     }
 
