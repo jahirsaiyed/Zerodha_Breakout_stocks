@@ -38,6 +38,9 @@ export interface UserConfig {
   telegramChatId: string | null
   zerodhaConnected: boolean
   hasTotpSecret: boolean
+  hasBotToken: boolean
+  botName: string | null
+  botUsername: string | null
 }
 
 export interface AccountSummary {

@@ -2,6 +2,7 @@ package com.trading.notifications;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.trading.common.EncryptionUtil;
 import com.trading.signals.Position;
 import com.trading.signals.PositionRepository;
 import com.trading.signals.PositionStatus;
@@ -23,54 +24,55 @@ import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Polls Telegram for bot commands and routes them to the appropriate handler.
+ * Polls each user's personal Telegram bot for commands and routes them to the
+ * appropriate handler.
  *
- * <p>The bot token is read from {@link TelegramBotConfigService} on every poll cycle,
- * so the bot activates immediately after a token is configured through the admin UI
- * without any application restart.
+ * <p>Users configure their own bot token in Settings. The poll loop runs every
+ * 10 s and iterates all {@link UserConfig} rows that have a {@code telegram_bot_token}
+ * set. Each user's bot is polled independently with its own {@code lastUpdateId} cursor.
  *
  * <p>Supported commands: /portfolio /signals /summary /status
  *
  * <p>User lookup: the {@code from.id} in each Telegram message is matched against
- * {@code user_configs.telegram_chat_id}. Commands from unknown chat IDs are silently ignored.
+ * {@code user_configs.telegram_chat_id} to identify the requesting user.
  *
- * <p>Chat discovery: each update is inspected for chat metadata (id, title, type) and
- * stored in {@link #discoveredChats} so the UI can present a chat picker.
+ * <p>Chat discovery: each update is stored in {@link #discoveredChatsByUser} keyed
+ * by {@code userId} so the UI can present a per-user chat picker.
  */
 @Slf4j
 @Service
 public class TelegramBotService {
 
-    private final TelegramBotConfigService botConfigService;
     private final TelegramProperties       telegramProperties;
     private final TelegramApiClient        telegramClient;
     private final UserConfigRepository     userConfigRepository;
     private final PositionRepository       positionRepository;
     private final SignalRepository         signalRepository;
+    private final EncryptionUtil           encryptionUtil;
     private final RestTemplate             restTemplate;
     private final ObjectMapper             objectMapper = new ObjectMapper();
 
-    /** chatId → TelegramChatDto, populated as updates arrive. */
-    private final Map<String, TelegramChatDto> discoveredChats = new ConcurrentHashMap<>();
+    /** userId → (chatId → TelegramChatDto), populated as updates arrive per user's bot. */
+    private final Map<Long, Map<String, TelegramChatDto>> discoveredChatsByUser = new ConcurrentHashMap<>();
 
-    private long lastUpdateId = 0;
+    /** userId → last processed update_id for that user's bot. */
+    private final Map<Long, Long> lastUpdateIdByUser = new ConcurrentHashMap<>();
 
-    public TelegramBotService(TelegramBotConfigService botConfigService,
-                              TelegramProperties telegramProperties,
+    public TelegramBotService(TelegramProperties telegramProperties,
                               TelegramApiClient telegramClient,
                               UserConfigRepository userConfigRepository,
                               PositionRepository positionRepository,
-                              SignalRepository signalRepository) {
-        this.botConfigService     = botConfigService;
+                              SignalRepository signalRepository,
+                              EncryptionUtil encryptionUtil) {
         this.telegramProperties   = telegramProperties;
         this.telegramClient       = telegramClient;
         this.userConfigRepository = userConfigRepository;
         this.positionRepository   = positionRepository;
         this.signalRepository     = signalRepository;
+        this.encryptionUtil       = encryptionUtil;
 
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10_000);
@@ -81,12 +83,26 @@ public class TelegramBotService {
     @Scheduled(fixedDelay = 10_000)
     @Transactional(readOnly = true)
     public void pollUpdates() {
-        Optional<String> tokenOpt = botConfigService.getActiveToken();
-        if (tokenOpt.isEmpty()) return;
-        String token = tokenOpt.get();
+        List<UserConfig> configs = userConfigRepository.findAll().stream()
+                .filter(c -> c.getTelegramBotToken() != null)
+                .toList();
+
+        for (UserConfig config : configs) {
+            try {
+                String token = encryptionUtil.decrypt(config.getTelegramBotToken());
+                pollUserBot(config, token);
+            } catch (Exception e) {
+                log.debug("Failed to poll bot for user {}: {}", config.getUser().getId(), e.getMessage());
+            }
+        }
+    }
+
+    private void pollUserBot(UserConfig config, String token) {
+        Long userId = config.getUser().getId();
+        long lastId = lastUpdateIdByUser.getOrDefault(userId, 0L);
 
         String url = telegramProperties.getBaseUrl() + "/bot" + token
-                + "/getUpdates?offset=" + (lastUpdateId + 1) + "&timeout=0&limit=100";
+                + "/getUpdates?offset=" + (lastId + 1) + "&timeout=0&limit=100";
         try {
             ResponseEntity<String> response = restTemplate.getForEntity(url, String.class);
             if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) return;
@@ -96,31 +112,32 @@ public class TelegramBotService {
 
             for (JsonNode update : root.path("result")) {
                 long updateId = update.path("update_id").asLong();
-                if (updateId > lastUpdateId) lastUpdateId = updateId;
-                recordChat(update);
-                processUpdate(update);
+                if (updateId > lastId) {
+                    lastId = updateId;
+                }
+                recordChat(userId, update);
+                processUpdate(config, token, update);
             }
+            lastUpdateIdByUser.put(userId, lastId);
         } catch (Exception e) {
-            log.debug("Telegram poll error: {}", e.getMessage());
+            log.debug("Telegram poll error for user {}: {}", userId, e.getMessage());
         }
     }
 
-    /**
-     * Extracts chat metadata from an update and stores it in {@link #discoveredChats}.
-     * Handles both {@code message} and {@code channel_post} update types.
-     */
-    private void recordChat(JsonNode update) {
+    private void recordChat(Long userId, JsonNode update) {
         JsonNode chat = update.path("message").path("chat");
         if (chat.isMissingNode()) {
             chat = update.path("channel_post").path("chat");
         }
         if (chat.isMissingNode()) return;
 
-        String chatId = String.valueOf(chat.path("id").asLong());
-        String chatType = chat.path("type").asText("private");
+        String chatId    = String.valueOf(chat.path("id").asLong());
+        String chatType  = chat.path("type").asText("private");
         String chatTitle = resolveChatTitle(chat, chatType);
 
-        discoveredChats.put(chatId, new TelegramChatDto(chatId, chatTitle, chatType));
+        discoveredChatsByUser
+                .computeIfAbsent(userId, k -> new ConcurrentHashMap<>())
+                .put(chatId, new TelegramChatDto(chatId, chatTitle, chatType));
     }
 
     private String resolveChatTitle(JsonNode chat, String chatType) {
@@ -138,15 +155,15 @@ public class TelegramBotService {
     }
 
     /**
-     * Returns the list of Telegram chats discovered from bot updates so far.
-     * This list is in-memory and resets on application restart.
-     * Users can repopulate it by sending any message to the bot.
+     * Returns the Telegram chats discovered so far for the given user's bot.
+     * The list is in-memory and resets on application restart.
      */
-    public List<TelegramChatDto> getDiscoveredChats() {
-        return List.copyOf(discoveredChats.values());
+    public List<TelegramChatDto> getDiscoveredChatsForUser(Long userId) {
+        Map<String, TelegramChatDto> chats = discoveredChatsByUser.get(userId);
+        return chats == null ? List.of() : List.copyOf(chats.values());
     }
 
-    private void processUpdate(JsonNode update) {
+    private void processUpdate(UserConfig config, String token, JsonNode update) {
         JsonNode message = update.path("message");
         if (message.isMissingNode()) return;
 
@@ -157,18 +174,14 @@ public class TelegramBotService {
 
         String command = text.split("\\s+")[0].toLowerCase().replaceAll("@.*", "");
 
-        Optional<UserConfig> configOpt = userConfigRepository.findAll().stream()
-                .filter(c -> chatId.equals(c.getTelegramChatId()))
-                .findFirst();
-
-        if (configOpt.isEmpty()) {
-            log.debug("Telegram command '{}' from unknown chatId={} — ignored", command, chatId);
+        // Only respond to messages from the configured chat (or from the user themselves)
+        if (!chatId.equals(config.getTelegramChatId())) {
+            log.debug("Telegram command '{}' from chatId={} does not match user {}'s configured chatId — ignored",
+                    command, chatId, config.getUser().getId());
             return;
         }
 
-        UserConfig config = configOpt.get();
         Long userId = config.getUser().getId();
-
         String reply = switch (command) {
             case "/portfolio" -> buildPortfolioReply(userId);
             case "/signals"   -> buildSignalsReply();
@@ -177,7 +190,7 @@ public class TelegramBotService {
             default           -> "Unknown command. Try /portfolio /signals /summary /status";
         };
 
-        telegramClient.sendMessage(chatId, reply);
+        telegramClient.sendMessage(token, chatId, reply);
     }
 
     // ── Command handlers ──────────────────────────────────────────────────────
