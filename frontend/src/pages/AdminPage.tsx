@@ -7,7 +7,6 @@ import type { AdminUser, HealthResponse } from '../lib/types'
 import { Badge } from '../components/Badge'
 import { useAuth } from '../contexts/AuthContext'
 
-const inputCls = "w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400"
 
 export function AdminPage() {
   const { user } = useAuth()
