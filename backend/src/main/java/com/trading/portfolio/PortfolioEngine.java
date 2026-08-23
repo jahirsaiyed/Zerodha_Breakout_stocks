@@ -149,6 +149,7 @@ public class PortfolioEngine {
             // Any broker failure (order rejection OR network error) must roll back the pending position.
             // Without this, a failed placeLimitOrder leaves a stranded PENDING_ENTRY row in the DB.
             db.cancelPosition(positionId);
+            log.error("Error {}", e);
             throw e;
         }
     }

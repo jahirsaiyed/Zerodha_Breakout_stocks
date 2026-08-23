@@ -1,0 +1,26 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/trading
+    username: trading
+    password: trading
+
+jwt:
+  secret: dev_jwt_secret_replace_in_production_must_be_64_chars_minimum_here
+
+encryption:
+  key: dev_encryption_key_32chars_min__
+
+cors:
+  allowed-origins: http://localhost:5173
+
+cookie:
+  secure: false
+
+telegram:
+  enabled: false
+
+sheets:
+  enabled: ${SHEETS_ENABLED:true}
+  spreadsheet-id: ${SHEETS_SPREADSHEET_ID:1wfDvpIb0my2NycIO4mJyJ2JOXpyXMl7qVDezp-1KsYY}
+  credentials-path: ${SHEETS_CREDENTIALS_PATH:D:/breakoutstocks-6c3dde26968c.json}
+  range: ${SHEETS_RANGE:breakout-app!A2:Q}
