@@ -1,17 +1,27 @@
 package com.trading.portfolio;
 
+import com.trading.market.GoogleFinancePriceService;
 import com.trading.signals.Signal;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class SignalScoringServiceTest {
+
+    @Mock
+    private GoogleFinancePriceService googleFinancePriceService;
 
     private SignalScoringService scoringService;
 
@@ -20,7 +30,7 @@ class SignalScoringServiceTest {
         ScoringProperties props = new ScoringProperties();
         props.setProximityWeight(0.6);
         props.setRiskRewardWeight(0.4);
-        scoringService = new SignalScoringService(props);
+        scoringService = new SignalScoringService(props, googleFinancePriceService);
     }
 
     private Signal signal(long id, String symbol, double entry, double sl, double target) {
@@ -45,14 +55,34 @@ class SignalScoringServiceTest {
     }
 
     @Test
-    @DisplayName("signal with no quote is included with proximity=1.0 (RRR-only ranking)")
-    void rank_noQuote_signalIncludedWithMaxProximity() {
+    @DisplayName("no broker quote and Google Finance also empty — signal skipped")
+    void rank_noQuote_googleFinanceEmpty_signalSkipped() {
+        when(googleFinancePriceService.getPrices(anyList())).thenReturn(Map.of());
         Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
-        // No live quote available — signal should still be ranked using proximity=1.0
+        var result = scoringService.rank(List.of(s), Map.of());
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("no broker quote but Google Finance resolves price — signal scored with that LTP")
+    void rank_noQuote_googleFinanceReturnsPrice_signalScored() {
+        when(googleFinancePriceService.getPrices(anyList()))
+                .thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2450)));
+        Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
         var result = scoringService.rank(List.of(s), Map.of());
         assertThat(result).hasSize(1);
-        // Single signal → rrNorm=1.0, proximity=1.0 → score = 0.6*1.0 + 0.4*1.0 = 1.0
-        assertThat(result.get(0).score()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(result.get(0).signal().getSymbol()).isEqualTo("RELIANCE");
+        assertThat(result.get(0).score()).isPositive();
+    }
+
+    @Test
+    @DisplayName("no broker quote but Google Finance returns price at or below SL — signal disqualified")
+    void rank_noQuote_googleFinancePriceBelowSl_signalDisqualified() {
+        when(googleFinancePriceService.getPrices(anyList()))
+                .thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2300)));
+        Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
+        var result = scoringService.rank(List.of(s), Map.of());
+        assertThat(result).isEmpty();
     }
 
     @Test
