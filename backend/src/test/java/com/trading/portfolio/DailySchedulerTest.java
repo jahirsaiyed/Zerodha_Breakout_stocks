@@ -49,6 +49,8 @@ class DailySchedulerTest {
     void sendReloginReminders_disconnectedUser_sendsNotification() {
         config.setZerodhaConnected(false);
         config.setZerodhaAccessToken(null);
+        config.setTelegramBotToken("bot123:token");
+        config.setTelegramChatId("456");
         when(userConfigRepository.findAll()).thenReturn(List.of(config));
 
         scheduler.sendReloginReminders();
