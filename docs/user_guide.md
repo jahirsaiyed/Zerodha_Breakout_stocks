@@ -136,22 +136,33 @@ For each active position you can see:
 
 - Live LTP and unrealised P&L (requires Zerodha connection)
 - GTT status badge (whether target + SL protection is active)
-- **Exit** button for a manual market exit
+- **Close** button for a manual market exit
 
-### 4.3 Manual Exit
+### 4.3 Manual Close
 
-To exit a position before it hits its target or stop-loss:
+To close a position before it hits its target or stop-loss:
 
-1. Click **Exit** on the position row.
-2. A confirmation prompt appears: "Confirm exit?"
+1. Click **Close** on the position row.
+2. A confirmation prompt appears: "Confirm close?"
 3. Click **Yes** to place a CNC market sell order through Zerodha immediately.
-4. Click **No** to cancel.
+4. Click **No** to dismiss.
 
 > **Note:** The market sell is placed at the current market price. In fast-moving markets, the actual fill price may differ from the LTP shown.
 
 ### 4.4 Pending Positions
 
 Pending positions have entry limit orders placed but not yet filled. They will move to **Active** once Zerodha confirms the order fill. The scheduler checks fill status regularly during market hours.
+
+### 4.5 Cancelling a Pending Entry
+
+To cancel a pending entry before it fills:
+
+1. Click **Cancel** on the pending position row.
+2. A confirmation prompt appears: "Confirm cancel?"
+3. Click **Yes** — the system will cancel the entry order on Zerodha and mark the position as CANCELLED.
+4. Click **No** to dismiss.
+
+> **Note:** If the entry order fills on Zerodha in the brief window between you clicking Cancel and the cancellation reaching Zerodha, the position will transition to Active normally. In that case, use the **Close** button on the Active tab instead.
 
 ---
 
@@ -353,7 +364,8 @@ Here is a typical daily trading workflow:
 3. **During market hours**
    - Monitor the Positions page for fills and live P&L
    - The system auto-refreshes every 30 seconds
-   - Use the **Exit** button if you want to exit a position manually before the target or stop-loss is triggered
+   - Use the **Close** button on the Active tab to exit a position manually before the target or stop-loss is triggered
+   - Use the **Cancel** button on the Pending tab to withdraw an unfilled entry order
 
 4. **End of day (after 3:30 PM IST)**
    - Check the History page for the day's closed trades and P&L
