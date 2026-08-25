@@ -54,6 +54,8 @@ export interface UserConfig {
   botUsername: string | null
   marginUsagePercent: number
   marginUsageFixedLimit: number | null
+  tradingPaused: boolean
+  syncPaused: boolean
 }
 
 export interface AccountSummary {

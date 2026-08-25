@@ -22,6 +22,7 @@ import java.util.List;
 /**
  * IST-zoned daily jobs:
  * <ul>
+ *   <li>06:15 — Bulk-expire all Zerodha tokens (they reset at 6 AM IST)</li>
  *   <li>08:00 — Telegram re-login reminder for users without a valid Zerodha token</li>
  *   <li>15:45 — Per-user daily P&amp;L summary via Telegram</li>
  * </ul>
@@ -43,6 +44,21 @@ public class DailyScheduler {
     private final PositionRepository   positionRepository;
     private final NotificationService  notificationService;
 
+    // ── 6:15 AM IST — Bulk-expire Zerodha tokens ─────────────────────────────
+
+    @Scheduled(cron = "0 15 6 * * MON-FRI", zone = "Asia/Kolkata")
+    @Transactional
+    public void expireAllTokens() {
+        List<UserConfig> connected = userConfigRepository.findByZerodhaConnectedTrue();
+        log.info("[AUTH] token expiry START — {} connected user(s)", connected.size());
+        for (UserConfig config : connected) {
+            config.setZerodhaAccessToken(null);
+            config.setZerodhaConnected(false);
+        }
+        userConfigRepository.saveAll(connected);
+        log.info("[AUTH] token expiry DONE — {} token(s) expired", connected.size());
+    }
+
     // ── 8:00 AM IST — Zerodha re-login reminder ──────────────────────────────
 
     @Scheduled(cron = "0 0 8 * * MON-FRI", zone = "Asia/Kolkata")
@@ -53,8 +69,12 @@ public class DailyScheduler {
         int reminded = 0;
 
         for (UserConfig config : configs) {
-            if (!Boolean.TRUE.equals(config.getZerodhaConnected())
-                    || config.getZerodhaAccessToken() == null) {
+            boolean needsReconnect = !Boolean.TRUE.equals(config.getZerodhaConnected())
+                    || config.getZerodhaAccessToken() == null;
+            boolean hasTelegram = config.getTelegramBotToken() != null
+                    && config.getTelegramChatId() != null
+                    && !config.getTelegramChatId().isBlank();
+            if (needsReconnect && hasTelegram) {
                 notificationService.notifyUser(config.getUser().getId(),
                         "Good morning! Please re-connect your Zerodha account to activate today's "
                         + "trading session. Open the app → Settings → Connect Zerodha.");

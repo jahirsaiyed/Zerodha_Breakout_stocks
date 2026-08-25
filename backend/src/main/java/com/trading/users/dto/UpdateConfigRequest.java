@@ -12,5 +12,7 @@ public record UpdateConfigRequest(
     String telegramChatId,
     String zerodhaTotpSecret,
     @DecimalMin("1") @DecimalMax("100") BigDecimal marginUsagePercent,
-    @DecimalMin("1000") BigDecimal marginUsageFixedLimit
+    @DecimalMin("1000") BigDecimal marginUsageFixedLimit,
+    Boolean tradingPaused,
+    Boolean syncPaused
 ) {}
