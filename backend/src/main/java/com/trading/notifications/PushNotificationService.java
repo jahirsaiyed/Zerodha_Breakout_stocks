@@ -23,11 +23,12 @@ public class PushNotificationService {
      * Failures per device are logged but do not throw.
      */
     public void sendToUser(Long userId, String title, String body, String deepLink) {
-        if (FirebaseApp.getApps().isEmpty()) {
-            return; // Firebase not configured
-        }
         List<DeviceToken> devices = deviceTokenRepository.findByUser_Id(userId);
         if (devices.isEmpty()) return;
+        if (FirebaseApp.getApps().isEmpty()) {
+            log.warn("Firebase not initialized; skipping push to userId={}", userId);
+            return;
+        }
 
         for (DeviceToken device : devices) {
             try {
