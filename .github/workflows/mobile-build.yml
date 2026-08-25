@@ -19,12 +19,12 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Install dependencies
         run: cd mobile && npm ci
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
       - name: Build Android + iOS
         working-directory: mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas build --platform all --non-interactive --profile production
 
   ota-update:
@@ -40,10 +40,10 @@ jobs:
           cache-dependency-path: mobile/package-lock.json
       - name: Install dependencies
         run: cd mobile && npm ci
-      - name: Install EAS CLI
-        run: npm install -g eas-cli
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
       - name: Publish OTA update
         working-directory: mobile
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas update --branch production --message "OTA update ${{ github.ref_name }}" --non-interactive
