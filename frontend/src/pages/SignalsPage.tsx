@@ -2,7 +2,7 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Signal, SignalQuote, StopLossBasis } from '../lib/types'
+import type { OrderPreview, Position, Signal, SignalQuote, StopLossBasis } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
 
 const BASIS_OPTIONS: StopLossBasis[] = ['DAILY', 'HOURLY', 'WEEKLY']
@@ -11,13 +11,178 @@ const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', closingBas
 
 type EditState = { id: number; entryPrice: string; stopLoss: string; target: string; closingBasis: StopLossBasis; notes: string }
 
-
 function diffBg(diff: number | null): string {
   if (diff === null) return ''
   if (diff < 0) return 'bg-red-50 text-red-600'
   if (diff < 5) return 'bg-amber-50 text-amber-700'
   return 'bg-emerald-50 text-emerald-700'
 }
+
+function fmt(n: number) {
+  return n.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+// ── Place Order Modal ─────────────────────────────────────────────────────────
+
+interface PlaceOrderModalProps {
+  signal: Signal
+  onClose: () => void
+  onSuccess: (msg: string) => void
+}
+
+function PlaceOrderModal({ signal, onClose, onSuccess }: PlaceOrderModalProps) {
+  const qc = useQueryClient()
+
+  const { data: preview, isLoading, isError } = useQuery<OrderPreview>({
+    queryKey: ['order-preview', signal.id],
+    queryFn: () => api.get(`/portfolio/signals/${signal.id}/order-preview`).then(r => r.data),
+    staleTime: 0,
+    retry: false,
+  })
+
+  const place = useMutation({
+    mutationFn: () => api.post(`/portfolio/signals/${signal.id}/place-order`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['signals'] })
+      qc.invalidateQueries({ queryKey: ['signals-quotes'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      const qty = preview?.estimatedQty ?? '?'
+      const cost = preview?.estimatedCost != null ? `₹${fmt(preview.estimatedCost)}` : ''
+      onSuccess(`Order placed for ${signal.symbol} — ${qty} shares${cost ? ` · ${cost}` : ''}`)
+      onClose()
+    },
+  })
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+         onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl">
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Place Buy Order</p>
+            <h2 className="text-lg font-semibold text-gray-900">{signal.symbol}</h2>
+          </div>
+          <button onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Signal summary */}
+        <div className="grid grid-cols-3 gap-px border-b border-gray-100 bg-gray-100">
+          {[
+            { label: 'Entry', value: `₹${fmt(signal.entryPrice)}` },
+            { label: 'Stop Loss', value: `₹${fmt(signal.stopLoss)}` },
+            { label: 'Target', value: `₹${fmt(signal.target)}` },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-white px-4 py-3">
+              <p className="text-xs text-gray-400">{label}</p>
+              <p className="mt-0.5 font-medium text-gray-800">{value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Preview body */}
+        <div className="px-6 py-5">
+          {isLoading && (
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <svg className="h-4 w-4 animate-spin" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
+              </svg>
+              Fetching order preview…
+            </div>
+          )}
+
+          {isError && (
+            <p className="text-sm text-red-600">Could not load preview. Check your Zerodha connection.</p>
+          )}
+
+          {preview && (
+            <div className="space-y-4">
+              {/* Cannot place reason */}
+              {!preview.canPlace && preview.reason && (
+                <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                  <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                    <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-sm text-amber-700">{preview.reason}</p>
+                </div>
+              )}
+
+              {/* Order details */}
+              <div className="rounded-xl border border-gray-100 bg-gray-50">
+                <div className="divide-y divide-gray-100">
+                  <Row label="Order type" value="Limit buy" />
+                  <Row label="Estimated quantity"
+                    value={preview.canPlace ? `${preview.estimatedQty} shares` : '—'}
+                    highlight={preview.canPlace} />
+                  <Row label="Estimated cost"
+                    value={preview.canPlace ? `₹${fmt(preview.estimatedCost)}` : '—'}
+                    highlight={preview.canPlace} />
+                  <Row label="R:R ratio" value={`${Number(signal.riskRewardRatio).toFixed(2)}x`} />
+                  {preview.availableMargin != null && (
+                    <Row label="Available margin" value={`₹${fmt(preview.availableMargin)}`} />
+                  )}
+                  {preview.availableSlots > 0 && (
+                    <Row label="Position slots free" value={String(preview.availableSlots)} />
+                  )}
+                </div>
+              </div>
+
+              {preview.canPlace && (
+                <p className="text-xs text-gray-400">
+                  A limit order at ₹{fmt(signal.entryPrice)} will be placed via Zerodha.
+                  A GTT target order is set automatically on fill.
+                </p>
+              )}
+            </div>
+          )}
+
+          {place.isError && (
+            <p className="mt-3 text-sm text-red-600">
+              {(place.error as any)?.response?.data?.error ?? 'Order placement failed'}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button
+            onClick={() => place.mutate()}
+            disabled={!preview?.canPlace || place.isPending || isLoading}
+            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white
+                       hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">
+            {place.isPending
+              ? 'Placing…'
+              : preview?.canPlace
+                ? `Confirm — Buy ${preview.estimatedQty} shares`
+                : 'Cannot Place Order'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function Row({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+  return (
+    <div className="flex items-center justify-between px-4 py-2.5">
+      <span className="text-xs text-gray-500">{label}</span>
+      <span className={`text-sm font-medium ${highlight ? 'text-indigo-700' : 'text-gray-700'}`}>{value}</span>
+    </div>
+  )
+}
+
+// ── Signals Page ──────────────────────────────────────────────────────────────
 
 export function SignalsPage() {
   const qc = useQueryClient()
@@ -27,6 +192,8 @@ export function SignalsPage() {
   const [editState, setEditState] = useState<EditState | null>(null)
   const [editError, setEditError] = useState('')
   const [syncResult, setSyncResult] = useState<{ added: number; modified: number; removed: number } | null>(null)
+  const [tradeSignal, setTradeSignal] = useState<Signal | null>(null)
+  const [successMsg, setSuccessMsg] = useState('')
 
   const { data: signals = [], isLoading } = useQuery<Signal[]>({
     queryKey: ['signals'],
@@ -38,6 +205,20 @@ export function SignalsPage() {
     queryFn: () => api.get('/signals/quotes').then(r => r.data.data),
     refetchInterval: 60_000,
   })
+
+  // Track which signals already have open positions so we can hide the Trade button
+  const { data: positions = [] } = useQuery<Position[]>({
+    queryKey: ['positions'],
+    queryFn: () => api.get('/portfolio/positions').then(r => r.data),
+    staleTime: 30_000,
+  })
+
+  const occupiedSignalIds = new Set(
+    positions
+      .filter(p => p.status === 'PENDING_ENTRY' || p.status === 'ACTIVE')
+      .map(p => p.signalId)
+      .filter((id): id is number => id != null)
+  )
 
   const quotesMap = new Map<number, SignalQuote>(quotes.map(q => [q.signalId, q]))
 
@@ -77,7 +258,7 @@ export function SignalsPage() {
     onError: (e: any) => setEditError(e.response?.data?.error ?? 'Update failed'),
   })
 
-  const cancel = useMutation({
+  const cancelSignal = useMutation({
     mutationFn: (id: number) => api.delete(`/signals/${id}`),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['signals'] }),
   })
@@ -114,6 +295,11 @@ export function SignalsPage() {
   const setEdit = (k: keyof EditState) => (e: React.ChangeEvent<HTMLInputElement>) =>
     setEditState(prev => prev ? { ...prev, [k]: e.target.value } : prev)
 
+  const handleSuccess = (msg: string) => {
+    setSuccessMsg(msg)
+    setTimeout(() => setSuccessMsg(''), 8000)
+  }
+
   const active  = signals.filter(s => s.status === 'ACTIVE')
   const others  = signals.filter(s => s.status !== 'ACTIVE')
 
@@ -121,6 +307,15 @@ export function SignalsPage() {
 
   return (
     <div className="p-4 sm:p-8">
+      {/* Modal */}
+      {tradeSignal && (
+        <PlaceOrderModal
+          signal={tradeSignal}
+          onClose={() => setTradeSignal(null)}
+          onSuccess={handleSuccess}
+        />
+      )}
+
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold text-gray-950">Signals</h1>
@@ -144,6 +339,12 @@ export function SignalsPage() {
       {syncResult && (
         <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
           Sync complete — {syncResult.added} added, {syncResult.modified} modified, {syncResult.removed} removed
+        </div>
+      )}
+
+      {successMsg && (
+        <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
+          {successMsg}
         </div>
       )}
 
@@ -272,6 +473,8 @@ export function SignalsPage() {
                   )
                 }
 
+                const hasPosition = occupiedSignalIds.has(sig.id)
+
                 return (
                   <tr key={sig.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                     {/* Rank */}
@@ -318,6 +521,20 @@ export function SignalsPage() {
                     </td>
                     <td className="px-5 py-3.5">
                       <div className="flex gap-2">
+                        {/* Trade button — visible for ACTIVE signals without an existing position */}
+                        {sig.status === 'ACTIVE' && !hasPosition && (
+                          <button onClick={() => setTradeSignal(sig)}
+                            className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700
+                                       transition-colors hover:border-emerald-300 hover:bg-emerald-100">
+                            Trade
+                          </button>
+                        )}
+                        {/* Ordered badge — signal already has an open position */}
+                        {sig.status === 'ACTIVE' && hasPosition && (
+                          <span className="inline-flex items-center rounded-md border border-indigo-100 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-600">
+                            Ordered
+                          </span>
+                        )}
                         {sig.status === 'ACTIVE' && (
                           <button onClick={() => startEdit(sig)}
                             className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-500
@@ -326,7 +543,7 @@ export function SignalsPage() {
                           </button>
                         )}
                         {sig.status === 'ACTIVE' && (
-                          <button onClick={() => cancel.mutate(sig.id)}
+                          <button onClick={() => cancelSignal.mutate(sig.id)}
                             className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-500
                                        transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
                             Cancel

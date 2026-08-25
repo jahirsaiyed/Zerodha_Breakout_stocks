@@ -1,33 +1,54 @@
-STATUS: DONE_WITH_CONCERNS
+STATUS: DONE
+
+COMMITS: ebb7c2e - feat: add device token registration and Firebase push notifications
 
 FILES_CREATED:
-- backend/src/main/resources/application.yml
-- backend/src/main/resources/db/migration/V1__initial_schema.sql
-- backend/src/main/java/com/trading/TradingApplication.java
+- backend/src/main/resources/db/migration/V12__device_tokens.sql
+- backend/src/main/java/com/trading/notifications/DeviceToken.java
+- backend/src/main/java/com/trading/notifications/DeviceTokenRepository.java
+- backend/src/main/java/com/trading/notifications/DeviceTokenRequest.java
+- backend/src/main/java/com/trading/notifications/PushNotificationService.java
+- backend/src/main/java/com/trading/notifications/DeviceTokenController.java
+- backend/src/test/java/com/trading/notifications/PushNotificationServiceTest.java
 
-VERIFICATION:
-Docker was not running at task execution time. Live Flyway migration run was skipped.
-SQL was verified by static review:
-- All 6 tables present: users, user_configs, signals, positions, orders, signal_sync_log
-- All constraints use VARCHAR CHECK (not PostgreSQL ENUMs) as specified
-- Foreign keys: user_configs.user_id -> users.id (UNIQUE), positions.user_id -> users.id,
-  positions.signal_id -> signals.id, orders.user_id -> users.id, orders.position_id -> positions.id
-- Partial unique index uq_position_user_signal_active on positions(user_id, signal_id)
-  WHERE status IN ('PENDING_ENTRY', 'ACTIVE') is correct
-- All BIGSERIAL PKs, NUMERIC(18,2) for prices, TIMESTAMP (UTC stored via application.yml
-  hibernate.jdbc.time_zone: UTC)
-- application.yml sets ddl-auto: validate (never create/update)
-- JWT_SECRET and ENCRYPTION_KEY bound from environment variables with no defaults (fail-fast)
-- cors.allowed-origin bound from CORS_ALLOWED_ORIGINS with default http://localhost:5173
-- TradingApplication.java has @SpringBootApplication + @EnableScheduling in package com.trading
+FILES_MODIFIED:
+- backend/pom.xml (added firebase-admin 9.3.0)
+- backend/src/main/java/com/trading/notifications/NotificationService.java (wired PushNotificationService)
+- backend/src/test/java/com/trading/notifications/NotificationServiceTest.java (added @Mock for PushNotificationService)
 
-COMMITS: 05118fa - feat: database schema V1 migration and Spring Boot bootstrap
+TEST_SUMMARY:
+- PushNotificationServiceTest: 1/1 PASS
+- NotificationServiceTest: 10/10 PASS (pre-existing test, fixed mock injection)
+- Full suite: 202 run, 1 failure (DailySchedulerTest - pre-existing), 10 errors (UserControllerTest - pre-existing)
+- No regressions introduced
 
-CONCERNS:
-- Docker not running: Flyway migration could not be executed live. SQL correctness verified by
-  manual review only. Run `docker compose up postgres -d` then
-  `./mvnw spring-boot:run` (with JWT_SECRET and ENCRYPTION_KEY env vars set) to confirm
-  "Successfully applied 1 migration" in the log.
-- orders.type uses column name `type` which is a reserved word in some SQL dialects; it is
-  valid in PostgreSQL and the CHECK constraint is correct, but downstream JPA mapping will
-  need @Column(name="type") on the entity field to avoid ambiguity.
+KEY_DESIGN_DECISIONS:
+- V12 uses VARCHAR(10) CHECK constraint instead of PostgreSQL ENUM (avoids Flyway complications)
+- Push is called in both ifPresentOrElse branches so users without Telegram config still receive push
+- Early-return Telegram pattern converted to if/else to ensure push always executes
+- PushNotificationService.sendToUser() catches all per-device exceptions and logs warnings only
+
+CONCERNS: none
+
+---
+
+## Fix Report: TOCTOU + @Transactional (task-2 patch)
+
+ISSUE 1 (TOCTOU race — POST /api/users/me/push-token):
+- Removed stream-filter existence check (findByUser_Id → anyMatch)
+- Replaced with try/catch DataIntegrityViolationException around save()
+- If DB UNIQUE constraint fires on concurrent duplicate, exception is caught and 200 is returned (idempotent)
+- Import added: org.springframework.dao.DataIntegrityViolationException
+
+ISSUE 2 (Missing @Transactional — DELETE /api/users/me/push-token):
+- Added @Transactional on deregister() method
+- deleteByUser_IdAndToken is a Spring Data derived-delete requiring a transaction context
+- Import added: org.springframework.transaction.annotation.Transactional
+
+FILE CHANGED:
+- backend/src/main/java/com/trading/notifications/DeviceTokenController.java
+
+TEST_SUMMARY:
+- PushNotificationServiceTest: PASS (no regressions)
+- Full suite: same result as pre-patch baseline — 1 pre-existing failure (DailySchedulerTest), 10 pre-existing errors (UserControllerTest context load failure)
+- No new failures introduced by this patch

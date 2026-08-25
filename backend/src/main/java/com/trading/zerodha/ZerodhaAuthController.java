@@ -106,7 +106,11 @@ public class ZerodhaAuthController {
 
         try {
             zerodhaAuthService.complete(nonce, request_token);
-            response.sendRedirect(frontendBase + "/settings?zerodha=connected");
+            if (isMobileClient(request)) {
+                response.sendRedirect("zbs://zerodha-callback?status=connected");
+            } else {
+                response.sendRedirect(frontendBase + "/settings?zerodha=connected");
+            }
         } catch (Exception e) {
             log.error("Zerodha OAuth callback error: {}", e.getMessage(), e);
             response.sendRedirect(frontendBase + "/settings?zerodha=error&reason=token_exchange_failed");
@@ -147,6 +151,11 @@ public class ZerodhaAuthController {
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────
+
+    private boolean isMobileClient(HttpServletRequest request) {
+        String ua = request.getHeader("User-Agent");
+        return ua != null && ua.contains("ZerodhaBreakoutMobile");
+    }
 
     private String extractNonceCookie(HttpServletRequest request) {
         Cookie[] cookies = request.getCookies();

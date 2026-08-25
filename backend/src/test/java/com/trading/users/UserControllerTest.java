@@ -7,6 +7,7 @@ import com.trading.notifications.NotificationService;
 import com.trading.notifications.TelegramBotService;
 import com.trading.notifications.TelegramChatDto;
 import com.trading.portfolio.PortfolioDbService;
+import com.trading.zerodha.ZerodhaAuthService;
 import com.trading.users.dto.UserResponse;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -43,6 +44,7 @@ class UserControllerTest {
     @MockBean PortfolioDbService portfolioDbService;
     @MockBean JwtUtil jwtUtil;
     @MockBean TelegramBotService telegramBotService;
+    @MockBean ZerodhaAuthService zerodhaAuthService;
 
     // ── POST /me/password ─────────────────────────────────────────────────────
 

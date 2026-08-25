@@ -112,6 +112,21 @@ class ZerodhaAuthControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/zerodha/callback with mobile User-Agent redirects to deep link")
+    void callback_redirectsToDeepLinkForMobileClient() throws Exception {
+        Cookie nonce = new Cookie("zerodha_oauth_nonce", "valid-nonce");
+        doNothing().when(zerodhaAuthService).complete(eq("valid-nonce"), eq("req-token-abc"));
+
+        mockMvc.perform(get("/api/zerodha/callback")
+                        .param("request_token", "req-token-abc")
+                        .param("status", "success")
+                        .cookie(nonce)
+                        .header("User-Agent", "ZerodhaBreakoutMobile/1.0"))
+                .andExpect(status().is3xxRedirection())
+                .andExpect(header().string("Location", "zbs://zerodha-callback?status=connected"));
+    }
+
+    @Test
     @WithMockUser(username = "user@example.com")
     @DisplayName("GET /api/zerodha/status returns connected flag")
     void status_authenticated_returnsConnectedStatus() throws Exception {

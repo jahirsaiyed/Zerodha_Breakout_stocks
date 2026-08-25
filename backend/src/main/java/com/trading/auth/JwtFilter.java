@@ -40,6 +40,12 @@ public class JwtFilter extends OncePerRequestFilter {
     }
 
     private Optional<String> extractToken(HttpServletRequest req) {
+        // 1. Try Bearer header (mobile)
+        String authHeader = req.getHeader("Authorization");
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            return Optional.of(authHeader.substring(7));
+        }
+        // 2. Fall back to cookie (web)
         Cookie[] cookies = req.getCookies();
         if (cookies == null) return Optional.empty();
         return Arrays.stream(cookies)

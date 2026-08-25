@@ -101,6 +101,21 @@ export interface Order {
   updatedAt: string
 }
 
+export interface OrderPreview {
+  signalId: number
+  symbol: string
+  entryPrice: number
+  stopLoss: number
+  target: number
+  riskRewardRatio: number
+  estimatedQty: number
+  estimatedCost: number
+  availableSlots: number
+  availableMargin: number | null
+  canPlace: boolean
+  reason: string | null
+}
+
 export interface TelegramChat {
   chatId: string
   chatTitle: string
