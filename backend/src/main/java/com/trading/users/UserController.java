@@ -8,6 +8,7 @@ import com.trading.notifications.NotificationService;
 import com.trading.notifications.TelegramBotService;
 import com.trading.notifications.TelegramChatDto;
 import com.trading.portfolio.PortfolioDbService;
+import com.trading.zerodha.ZerodhaAuthService;
 import com.trading.users.dto.AccountSummaryResponse;
 import com.trading.users.dto.ChangePasswordRequest;
 import com.trading.users.dto.UpdateConfigRequest;
@@ -41,6 +42,7 @@ public class UserController {
     private final BrokerAdapterFactory brokerAdapterFactory;
     private final PortfolioDbService portfolioDbService;
     private final TelegramBotService telegramBotService;
+    private final ZerodhaAuthService zerodhaAuthService;
 
     @GetMapping("/me")
     @Operation(summary = "Get current user")
@@ -116,9 +118,10 @@ public class UserController {
             try {
                 availableMargin = brokerAdapterFactory.forUser(configOpt.get()).getAvailableMargin();
             } catch (BrokerTokenException e) {
-                log.debug("Margin unavailable for {} — token issue: {}", email, e.getMessage());
+                log.warn("Zerodha token expired for {} — auto-revoking connection: {}", email, e.getMessage());
+                zerodhaAuthService.disconnect(userId);
             } catch (Exception e) {
-                log.debug("Margin unavailable for {} ({}): {}", email, e.getClass().getSimpleName(), e.getMessage());
+                log.warn("Margin unavailable for {} ({}): {}", email, e.getClass().getSimpleName(), e.getMessage());
             }
         }
 

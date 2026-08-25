@@ -233,6 +233,9 @@ export function SettingsPage() {
             ) : (
               <p className="mt-1 text-xl font-semibold text-gray-400">—</p>
             )}
+            {config?.zerodhaConnected && summary !== undefined && summary.availableMargin == null && (
+              <p className="mt-0.5 text-xs text-amber-500">Session expired — please reconnect</p>
+            )}
             {!config?.zerodhaConnected && (
               <p className="mt-0.5 text-xs text-gray-400">Connect Zerodha to see margin</p>
             )}
