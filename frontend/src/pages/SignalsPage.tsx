@@ -126,7 +126,9 @@ function PlaceOrderModal({ signal, onClose, onSuccess }: PlaceOrderModalProps) {
                     highlight={preview.canPlace} />
                   {preview.canPlace && (() => {
                     const atRisk = preview.estimatedQty * (preview.entryPrice - preview.stopLoss)
-                    const riskPct = preview.estimatedCost > 0 ? (atRisk / preview.estimatedCost) * 100 : null
+                    const riskPct = preview.availableMargin != null && preview.availableMargin > 0
+                      ? (atRisk / preview.availableMargin) * 100
+                      : null
                     return (
                       <Row
                         label="Max loss if SL hit"
