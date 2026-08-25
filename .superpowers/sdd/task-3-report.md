@@ -1,23 +1,13 @@
 STATUS: DONE
 
-FILES_CREATED:
-- backend/src/main/java/com/trading/common/ApiResponse.java
-- backend/src/main/java/com/trading/common/EncryptionUtil.java
-- backend/src/main/java/com/trading/common/GlobalExceptionHandler.java
-- backend/src/test/java/com/trading/common/EncryptionUtilTest.java
+COMMIT: 8579502
 
 TEST_RESULTS:
-[INFO] Running com.trading.common.EncryptionUtilTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.148 s -- in com.trading.common.EncryptionUtilTest
-[INFO]
-[INFO] Results:
-[INFO]
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0
-[INFO]
-[INFO] BUILD SUCCESS
-[INFO] Total time:  2.455 s
+ZerodhaAuthControllerTest: 9/9 PASS (8 pre-existing + 1 new test)
+Full suite: 203 total — pre-existing UserControllerTest failures unchanged (10 context-load errors); ZerodhaAuthControllerTest 9/9 PASS
 
-COMMITS:
-9134f85 - feat: common module — ApiResponse, EncryptionUtil, GlobalExceptionHandler
+CHANGES:
+- ZerodhaAuthController.java: added isMobileClient() helper; callback() now branches on User-Agent containing "ZerodhaBreakoutMobile" to redirect to zbs://zerodha-callback?status=connected instead of web URL
+- ZerodhaAuthControllerTest.java: added callback_redirectsToDeepLinkForMobileClient test
 
 CONCERNS: none

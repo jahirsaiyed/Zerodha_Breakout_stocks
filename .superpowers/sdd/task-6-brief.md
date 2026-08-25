@@ -1,135 +1,181 @@
-# Task 6 Brief: User Config + Admin API
+### Task 6: Mobile — Auth Screens + Root Layout
 
-## Context
-Task 6 of 7 in Phase 1 (Foundation) of a Trading Portfolio Management System.
-Project root: `D:\Zerodha_Breakout_stocks`
-Branch: main
+**Files:**
+- Create: `mobile/app/_layout.tsx`
+- Create: `mobile/app/(auth)/_layout.tsx`
+- Create: `mobile/app/(auth)/login.tsx`
+- Create: `mobile/app/(auth)/zerodha-connect.tsx`
 
-## Global Constraints
-- Java 21, Spring Boot 3.3.5, package root `com.trading`
-- All REST endpoints prefixed `/api`
-- All API responses: `{ "success": true|false, "data": ..., "error": null|string }` — use `ApiResponse<T>` from `com.trading.common.ApiResponse`
-- JWT in `httpOnly` cookie named `jwt`; 24-hour expiry; `SameSite=Strict`
-- Schema owned exclusively by Flyway — `ddl-auto: validate` always
+**Interfaces:**
+- Consumes: `useAuthStore.restoreSession`, `useAuthStore.login`
+- Root layout redirects unauthenticated users to `/(auth)/login`
 
-## What already exists (do NOT recreate)
-- `com.trading.common.ApiResponse<T>` — record with `success(T data)` and `error(String msg)` factory methods
-- `com.trading.users.UserService` — methods: `getUserByEmail(String)`, `getAllUsers()`, `setUserActive(Long, boolean)`, `getConfigByEmail(String)`, `updateConfig(String, UpdateConfigRequest)`, `createUser(CreateUserRequest)`
-- `com.trading.users.dto.UserResponse` — record(Long id, String name, String email, String role, Boolean active)
-- `com.trading.users.dto.UserConfigResponse` — record(Integer maxPositions, String positionSizingMethod, BigDecimal positionSizingValue, Integer orderExpiryDays, String telegramChatId, Boolean zerodhaConnected, String zerodhaApiKey)
-- `com.trading.users.dto.CreateUserRequest` — record(@NotBlank name, @Email @NotBlank email, @NotBlank @Size(min=8) password, UserRole role)
-- `com.trading.users.dto.UpdateConfigRequest` — record with optional nullable fields
-- `com.trading.config.SecurityConfig` — `/api/admin/**` requires ADMIN role; everything else requires authenticated
-- Spring Security: `Authentication.getName()` returns the user's email (the JWT subject)
+- [ ] **Step 1: Create root layout with auth gate**
 
-## Files to Create
+```typescript
+// mobile/app/_layout.tsx
+import { useEffect } from 'react';
+import { Stack, router } from 'expo-router';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import '../global.css';
+import { useAuthStore } from '../store/authStore';
 
-### Production code
-- `backend/src/main/java/com/trading/users/UserController.java`
-- `backend/src/main/java/com/trading/users/AdminController.java`
+const queryClient = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
+});
 
-### Tests
-There are no new test files in this task — the smoke tests are manual curl commands. The existing 9 tests (AuthControllerTest 4, EncryptionUtilTest 2, UserServiceTest 3) must still pass after these changes.
+export default function RootLayout() {
+  const restoreSession = useAuthStore((s) => s.restoreSession);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-## Exact Implementation
+  useEffect(() => {
+    restoreSession().then((ok) => {
+      if (!ok) router.replace('/(auth)/login');
+    });
+  }, []);
 
-### UserController.java
-```java
-package com.trading.users;
-
-import com.trading.common.ApiResponse;
-import com.trading.users.dto.UpdateConfigRequest;
-import com.trading.users.dto.UserConfigResponse;
-import com.trading.users.dto.UserResponse;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.security.core.Authentication;
-import org.springframework.web.bind.annotation.*;
-
-@RestController
-@RequestMapping("/api/users")
-@RequiredArgsConstructor
-public class UserController {
-    private final UserService userService;
-
-    @GetMapping("/me")
-    public ResponseEntity<ApiResponse<UserResponse>> getMe(Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(userService.getUserByEmail(auth.getName())));
-    }
-
-    @GetMapping("/me/config")
-    public ResponseEntity<ApiResponse<UserConfigResponse>> getMyConfig(Authentication auth) {
-        return ResponseEntity.ok(ApiResponse.success(userService.getConfigByEmail(auth.getName())));
-    }
-
-    @PutMapping("/me/config")
-    public ResponseEntity<ApiResponse<UserConfigResponse>> updateMyConfig(
-            Authentication auth, @RequestBody @Valid UpdateConfigRequest req) {
-        return ResponseEntity.ok(ApiResponse.success(userService.updateConfig(auth.getName(), req)));
-    }
+  return (
+    <QueryClientProvider client={queryClient}>
+      <Stack screenOptions={{ headerShown: false }} />
+    </QueryClientProvider>
+  );
 }
 ```
 
-### AdminController.java
-```java
-package com.trading.users;
+- [ ] **Step 2: Create auth group layout**
 
-import com.trading.common.ApiResponse;
-import com.trading.users.dto.CreateUserRequest;
-import com.trading.users.dto.UserResponse;
-import jakarta.validation.Valid;
-import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+```typescript
+// mobile/app/(auth)/_layout.tsx
+import { Stack } from 'expo-router';
 
-import java.util.List;
-
-@RestController
-@RequestMapping("/api/admin")
-@RequiredArgsConstructor
-public class AdminController {
-    private final UserService userService;
-
-    @GetMapping("/users")
-    public ResponseEntity<ApiResponse<List<UserResponse>>> listUsers() {
-        return ResponseEntity.ok(ApiResponse.success(userService.getAllUsers()));
-    }
-
-    @PostMapping("/users")
-    public ResponseEntity<ApiResponse<UserResponse>> createUser(@RequestBody @Valid CreateUserRequest req) {
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(ApiResponse.success(userService.createUser(req)));
-    }
-
-    @PatchMapping("/users/{id}/status")
-    public ResponseEntity<ApiResponse<Void>> setStatus(
-            @PathVariable Long id, @RequestParam boolean active) {
-        userService.setUserActive(id, active);
-        return ResponseEntity.ok(ApiResponse.success(null));
-    }
+export default function AuthLayout() {
+  return <Stack screenOptions={{ headerShown: false }} />;
 }
 ```
 
-## Verification
-After creating files, run all tests to confirm nothing is broken:
+- [ ] **Step 3: Create login screen**
+
+```typescript
+// mobile/app/(auth)/login.tsx
+import { useState } from 'react';
+import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { router } from 'expo-router';
+import { useAuthStore } from '../../store/authStore';
+
+export default function LoginScreen() {
+  const login = useAuthStore((s) => s.login);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = async () => {
+    if (!email || !password) return;
+    setLoading(true);
+    try {
+      await login(email, password);
+      router.replace('/(tabs)/dashboard');
+    } catch {
+      Alert.alert('Login failed', 'Invalid email or password.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <View className="flex-1 justify-center px-6 bg-gray-950">
+      <Text className="text-white text-3xl font-bold mb-8">Zerodha Breakout</Text>
+
+      <TextInput
+        className="bg-gray-800 text-white rounded-lg px-4 py-3 mb-4"
+        placeholder="Email"
+        placeholderTextColor="#6b7280"
+        autoCapitalize="none"
+        keyboardType="email-address"
+        value={email}
+        onChangeText={setEmail}
+      />
+      <TextInput
+        className="bg-gray-800 text-white rounded-lg px-4 py-3 mb-6"
+        placeholder="Password"
+        placeholderTextColor="#6b7280"
+        secureTextEntry
+        value={password}
+        onChangeText={setPassword}
+      />
+
+      <TouchableOpacity
+        className="bg-blue-600 rounded-lg py-4 items-center"
+        onPress={handleLogin}
+        disabled={loading}
+      >
+        {loading
+          ? <ActivityIndicator color="#fff" />
+          : <Text className="text-white font-semibold text-base">Sign In</Text>
+        }
+      </TouchableOpacity>
+    </View>
+  );
+}
+```
+
+- [ ] **Step 4: Create Zerodha connect screen**
+
+```typescript
+// mobile/app/(auth)/zerodha-connect.tsx
+import { useEffect } from 'react';
+import { View, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import * as WebBrowser from 'expo-web-browser';
+import * as Linking from 'expo-linking';
+import { router } from 'expo-router';
+import { api } from '../../lib/api';
+
+WebBrowser.maybeCompleteAuthSession();
+
+export default function ZerodhaConnectScreen() {
+  useEffect(() => {
+    Linking.addEventListener('url', handleDeepLink);
+    return () => Linking.removeAllListeners('url');
+  }, []);
+
+  const handleDeepLink = ({ url }: { url: string }) => {
+    if (url.startsWith('zbs://zerodha-callback')) {
+      router.replace('/(tabs)/dashboard');
+    }
+  };
+
+  const startZerodhaOAuth = async () => {
+    const apiUrl = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:9006';
+    await WebBrowser.openBrowserAsync(`${apiUrl}/api/zerodha/login`, {
+      presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+    });
+  };
+
+  return (
+    <View className="flex-1 justify-center px-6 bg-gray-950 items-center">
+      <Text className="text-white text-2xl font-bold mb-4">Connect Zerodha</Text>
+      <Text className="text-gray-400 text-center mb-8">
+        Link your Zerodha account to start trading.
+      </Text>
+      <TouchableOpacity
+        className="bg-orange-500 rounded-lg px-8 py-4"
+        onPress={startZerodhaOAuth}
+      >
+        <Text className="text-white font-semibold text-base">Connect with Kite</Text>
+      </TouchableOpacity>
+      <TouchableOpacity className="mt-6" onPress={() => router.replace('/(tabs)/dashboard')}>
+        <Text className="text-gray-500">Skip for now</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+```
+
+- [ ] **Step 5: Commit**
+
 ```bash
-cd /d/Zerodha_Breakout_stocks/backend && ./mvnw test
-```
-Expected: BUILD SUCCESS, all 9 existing tests still pass (no new automated tests in this task).
-
-## Commit message
-```
-feat: user config API and admin user management endpoints
+git add mobile/app/_layout.tsx mobile/app/\(auth\)/
+git commit -m "feat: add auth screens and root layout auth gate"
 ```
 
-## Report
-Write your report to: `D:\Zerodha_Breakout_stocks\.superpowers\sdd\task-6-report.md`
+---
 
-Include:
-- STATUS: DONE | DONE_WITH_CONCERNS | NEEDS_CONTEXT | BLOCKED
-- Files created (list)
-- Test results (exact Maven output lines showing total tests run)
-- Any deviations from the plan
-- Commits made (hash + message)

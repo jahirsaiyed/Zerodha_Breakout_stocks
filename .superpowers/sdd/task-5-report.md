@@ -1,53 +1,48 @@
-# Task 5 Report: Auth Module + Security Config
+# Task 5 Report: Mobile API Client + Types + Auth Store
 
 ## STATUS: DONE
 
+## Commit
+
+- Hash: `3f3367b`
+- Message: `feat: add API client with Bearer auth, auto-refresh, and auth store`
+
 ## Files Created
 
-### Production Code
-- `backend/src/main/java/com/trading/auth/dto/LoginRequest.java`
-- `backend/src/main/java/com/trading/auth/JwtUtil.java`
-- `backend/src/main/java/com/trading/auth/JwtFilter.java`
-- `backend/src/main/java/com/trading/auth/AuthService.java`
-- `backend/src/main/java/com/trading/auth/AuthController.java`
-- `backend/src/main/java/com/trading/config/SecurityConfig.java`
+- `mobile/lib/types.ts` — User, Signal, Position, ClosedTrade, UserConfig, AccountSummary, TokenResponse, ApiResponse<T>
+- `mobile/lib/api.ts` — Axios instance with Bearer request interceptor, 401 auto-refresh with isRefreshing flag + pendingRequests queue
+- `mobile/store/authStore.ts` — Zustand store with login, logout, restoreSession; tokens in expo-secure-store
+- `mobile/lib/__tests__/api.test.ts` — Smoke test verifying api module loads without error
 
-### Test Code
-- `backend/src/test/java/com/trading/auth/AuthControllerTest.java`
+## Files Modified
 
-## TDD Workflow
-
-1. Wrote `AuthControllerTest.java` first.
-2. Ran test — RED confirmed (compilation failure: missing classes).
-3. Created production classes in prescribed order: `LoginRequest` → `JwtUtil` → `JwtFilter` → `SecurityConfig` → `AuthService` → `AuthController`.
-4. Ran `AuthControllerTest` — GREEN: 2 tests pass.
-5. Ran full suite — all 7 tests pass.
+- `mobile/babel.config.js` — Skip nativewind/babel preset in test environment to avoid react-native-worklets dependency
+- `mobile/package.json` — Added jest config (jest-expo preset, node testEnvironment, empty setupFiles override) and devDependencies: jest@29, babel-preset-expo, @react-native/jest-preset@0.86
 
 ## Test Results
 
-### AuthControllerTest (2 tests)
 ```
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.735 s -- in com.trading.auth.AuthControllerTest
+PASS lib/__tests__/api.test.ts (9.82 s)
+  api client
+    √ exports a base URL from EXPO_PUBLIC_API_URL (4701 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       1 passed, 1 total
 ```
 
-### Full Suite (7 tests)
-```
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.853 s -- in com.trading.auth.AuthControllerTest
-[INFO] Tests run: 2, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.052 s -- in com.trading.common.EncryptionUtilTest
-[INFO] Tests run: 3, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.291 s -- in com.trading.users.UserServiceTest
-[INFO] Tests run: 7, Failures: 0, Errors: 0, Skipped: 0
-[INFO] BUILD SUCCESS
-```
+## Bug Fix (b739c81)
 
-## Deviations from Plan
+**Problem:** When a token refresh failed, `pendingRequests = []` discarded all queued callbacks without settling their promises. Any concurrent request that entered the queue while a refresh was in-flight would stall indefinitely.
 
-One minor deviation: `@TestPropertySource` was extended to also include `jwt.secret` in addition to `cors.allowed-origin`. The brief mentioned adding `cors.allowed-origin=http://localhost:3000` if context fails. The `JwtUtil` bean in the test context also required `jwt.secret` to initialize (since `SecurityConfig` imports `JwtFilter` which depends on `JwtUtil`). Added:
-```
-jwt.secret=test-secret-key-that-is-at-least-64-characters-long-for-hmac-sha
-```
-This is test-only, does not affect production configuration.
+**Fix in `mobile/lib/api.ts`:**
+- Changed `pendingRequests` element type from `(token: string) => void` to `{ resolve: (token: string) => void; reject: (err: unknown) => void }`.
+- On success: `pendingRequests.forEach(({ resolve }) => resolve(newAccess))` — unchanged behaviour.
+- On failure: `pendingRequests.forEach(({ reject }) => reject(refreshError))` — now rejects each waiting promise before clearing the queue.
+- The `catch` clause now binds `refreshError` (was bare `catch {}`) so it can be forwarded to pending rejects.
 
-## Commit
+**Tests:** 1 passed (smoke test, `lib/__tests__/api.test.ts`).
 
-- Hash: `a54fdbf`
-- Message: `feat: auth module — JWT, security config, login/logout endpoints`
+## Concerns
+
+- `@react-native/jest-preset` must be pinned to `^0.86.x` (matching react-native 0.86) — 0.87 references `react-native/src/setup-env.js` which does not exist in RN 0.86.
+- `babel.config.js` now conditionally skips `nativewind/babel` in test env; this is intentional and does not affect the Metro/Expo bundler.
