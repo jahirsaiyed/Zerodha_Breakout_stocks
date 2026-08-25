@@ -150,7 +150,7 @@ export function SettingsPage() {
     setForm(f => ({ ...f, [k]: e.target.value }))
 
   const update = useMutation({
-    mutationFn: (extra?: Record<string, unknown>) => api.put('/users/me/config', {
+    mutationFn: () => api.put('/users/me/config', {
       maxPositions: Number(form.maxPositions),
       positionSizingMethod: form.positionSizingMethod,
       positionSizingValue: Number(form.positionSizingValue),
@@ -159,7 +159,6 @@ export function SettingsPage() {
       marginUsageFixedLimit: form.marginUsageFixedLimit !== '' ? Number(form.marginUsageFixedLimit) : null,
       telegramChatId: form.telegramChatId || null,
       zerodhaTotpSecret: form.zerodhaTotpSecret || null,
-      ...extra,
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['config'] })
