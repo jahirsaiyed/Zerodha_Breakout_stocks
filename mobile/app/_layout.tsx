@@ -3,6 +3,7 @@ import { Stack, router } from 'expo-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import '../global.css';
 import { useAuthStore } from '../store/authStore';
+import { usePushNotifications } from '../hooks/usePushNotifications';
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { retry: 1, staleTime: 30_000 } },
@@ -11,6 +12,8 @@ const queryClient = new QueryClient({
 export default function RootLayout() {
   const restoreSession = useAuthStore((s) => s.restoreSession);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  usePushNotifications();
 
   useEffect(() => {
     restoreSession().then((ok) => {
