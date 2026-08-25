@@ -34,10 +34,10 @@ public class SheetSyncScheduler {
             log.debug("Sheet sync skipped — integration disabled (trigger={})", trigger);
             return;
         }
-        log.info("Sheet sync starting (trigger={})", trigger);
+        log.info("[SHEET] sync starting (trigger={})", trigger);
         try {
             SyncResult result = sheetSyncService.sync();
-            log.info("Sheet sync done (trigger={}) — added={} modified={} removed={} skipped={}",
+            log.info("[SHEET] sync done (trigger={}) — added={} modified={} removed={} skipped={}",
                     trigger, result.added(), result.modified(), result.removed(), result.skipped());
         } catch (Exception e) {
             log.error("Sheet sync failed (trigger={}): {}", trigger, e.getMessage(), e);

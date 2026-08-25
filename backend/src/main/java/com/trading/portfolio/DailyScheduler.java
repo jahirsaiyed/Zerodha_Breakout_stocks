@@ -49,6 +49,7 @@ public class DailyScheduler {
     @Transactional(readOnly = true)
     public void sendReloginReminders() {
         List<UserConfig> configs = userConfigRepository.findAll();
+        log.info("[NOTIFY] re-login reminder START — {} user(s) to check", configs.size());
         int reminded = 0;
 
         for (UserConfig config : configs) {
@@ -61,7 +62,7 @@ public class DailyScheduler {
             }
         }
 
-        log.info("Re-login reminders sent to {} users", reminded);
+        log.info("[NOTIFY] re-login reminder DONE — reminded {} user(s)", reminded);
     }
 
     // ── 3:45 PM IST — Daily P&L summary ─────────────────────────────────────
@@ -72,13 +73,15 @@ public class DailyScheduler {
         LocalDateTime startOfDay = LocalDate.now(IST).atStartOfDay();
 
         List<UserConfig> configs = userConfigRepository.findAll();
+        log.info("[NOTIFY] daily P&L summary START — {} user(s)", configs.size());
         for (UserConfig config : configs) {
             try {
                 buildAndSendSummary(config, startOfDay);
             } catch (Exception e) {
-                log.warn("Daily summary failed for userId={}: {}", config.getUser().getId(), e.getMessage());
+                log.warn("[NOTIFY] daily summary failed for userId={}: {}", config.getUser().getId(), e.getMessage());
             }
         }
+        log.info("[NOTIFY] daily P&L summary DONE");
     }
 
     private void buildAndSendSummary(UserConfig config, LocalDateTime startOfDay) {

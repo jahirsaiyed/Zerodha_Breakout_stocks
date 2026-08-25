@@ -49,6 +49,9 @@ public class SheetSyncService {
         Map<String, Signal> dbMap = dbSignals.stream()
                 .collect(Collectors.toMap(Signal::getSourceRef, Function.identity()));
 
+        log.info("[SHEET] sync START — {} row(s) from sheet, {} active signal(s) in DB",
+                sheetRows.size(), dbSignals.size());
+
         int added = 0, modified = 0, removed = 0, skipped = 0;
 
         // --- additions and modifications ---
@@ -58,7 +61,7 @@ public class SheetSyncService {
                 // New signal
                 signalRepository.save(buildSignal(row));
                 added++;
-                log.debug("Sheet sync — added signal: {}", row.sourceRef());
+                log.info("[SHEET] added: {}", row.sourceRef());
             } else {
                 // Check if prices changed
                 if (pricesChanged(existing, row)) {
@@ -75,7 +78,7 @@ public class SheetSyncService {
                         applyUpdate(existing, row);
                         signalRepository.save(existing);
                         modified++;
-                        log.debug("Sheet sync — modified signal: {}", row.sourceRef());
+                        log.info("[SHEET] modified: {}", row.sourceRef());
                     }
                 }
                 // Notes-only update (always safe)
@@ -98,14 +101,14 @@ public class SheetSyncService {
                     signal.setStatus(SignalStatus.CANCELLED);
                     signalRepository.save(signal);
                     removed++;
-                    log.debug("Sheet sync — removed signal: {}", signal.getSourceRef());
+                    log.info("[SHEET] removed: {}", signal.getSourceRef());
                 }
             }
         }
 
         SyncResult result = new SyncResult(added, modified, removed, skipped);
         writeSyncLog(result);
-        log.info("Sheet sync complete — added={} modified={} removed={} skipped={}",
+        log.info("[SHEET] sync DONE — added={} modified={} removed={} skipped={}",
                 added, modified, removed, skipped);
         return result;
     }

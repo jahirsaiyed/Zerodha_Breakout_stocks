@@ -44,14 +44,14 @@ public class PortfolioEngine {
 
     public void runCoreLoop() {
         List<UserConfig> users = db.getConnectedUsers();
-        log.info("Core loop starting for {} connected user(s)", users.size());
+        log.info("[TRADE] START — {} connected user(s)", users.size());
         for (UserConfig config : users) {
             try {
                 runCoreLoopForUser(config);
             } catch (BrokerTokenException e) {
-                log.warn("Core loop — user {} skipped: token expired", config.getUser().getId());
+                log.warn("[TRADE] user={} skipped — token expired", config.getUser().getId());
             } catch (Exception e) {
-                log.error("Core loop — error for user {}: {}", config.getUser().getId(), e.getMessage(), e);
+                log.error("[TRADE] user={} error: {}", config.getUser().getId(), e.getMessage(), e);
             }
         }
     }
@@ -62,8 +62,9 @@ public class PortfolioEngine {
 
         long occupied = db.countActivePositions(userId);
         int slots = config.getMaxPositions() - (int) occupied;
+        log.info("[TRADE] user={} slots={}/{} (occupied={})", userId, slots, config.getMaxPositions(), occupied);
         if (slots <= 0) {
-            log.debug("Core loop — user {} has no free slots ({}/{})", userId, occupied, config.getMaxPositions());
+            log.info("[TRADE] user={} no free slots — skipping", userId);
             return;
         }
 
@@ -78,8 +79,9 @@ public class PortfolioEngine {
         }
 
         List<Signal> candidates = db.getCandidateSignals(userId, occupiedSymbols);
+        log.info("[TRADE] user={} occupiedSymbols={} candidates={}", userId, occupiedSymbols.size(), candidates.size());
         if (candidates.isEmpty()) {
-            log.debug("Core loop — user {} has no candidates", userId);
+            log.info("[TRADE] user={} no candidates — skipping", userId);
             return;
         }
 
@@ -87,19 +89,22 @@ public class PortfolioEngine {
         Map<String, BigDecimal> quotes;
         try {
             quotes = broker.getQuotes(symbols);
+            log.info("[TRADE] user={} broker quotes fetched for {}/{} symbols", userId, quotes.size(), symbols.size());
         } catch (BrokerTokenException e) {
-            log.warn("Core loop — user {} quotes unavailable (permission denied), ranking by RRR only", userId);
+            log.warn("[TRADE] user={} quotes unavailable (permission denied) — falling back to Google Finance", userId);
             quotes = Map.of();
         } catch (BrokerNetworkException e) {
-            log.warn("Core loop — user {} quotes fetch failed: {}, ranking by RRR only", userId, e.getMessage());
+            log.warn("[TRADE] user={} quotes fetch failed: {} — falling back to Google Finance", userId, e.getMessage());
             quotes = Map.of();
         }
         List<ScoredSignal> ranked = scoringService.rank(candidates, quotes);
+        log.info("[TRADE] user={} ranked={} signal(s)", userId, ranked.size());
         BigDecimal margin;
         try {
             margin = broker.getAvailableMargin();
+            log.info("[TRADE] user={} available margin=₹{}", userId, margin);
         } catch (BrokerNetworkException e) {
-            log.warn("Core loop — could not fetch margin for user {}: {}, skipping order placement", userId, e.getMessage());
+            log.warn("[TRADE] user={} could not fetch margin: {} — skipping order placement", userId, e.getMessage());
             return;
         }
 
@@ -112,11 +117,10 @@ public class PortfolioEngine {
             } catch (BrokerException e) {
                 // Catch all broker errors (order rejection, network, config) per signal so a
                 // failure on one signal does not abort placement of the remaining ranked signals.
-                log.warn("Core loop — order failed for signal {} user {}: {}",
-                        ss.signal().getId(), userId, e.getMessage());
+                log.warn("[TRADE] user={} order failed for signal={}: {}", userId, ss.signal().getId(), e.getMessage());
             }
         }
-        log.info("Core loop — user {} placed {}/{} orders", userId, placed, slots);
+        log.info("[TRADE] DONE user={} placed={}/{} slot(s)", userId, placed, slots);
     }
 
     private void placeEntryOrder(UserConfig config, BrokerAdapter broker,
@@ -131,11 +135,13 @@ public class PortfolioEngine {
 
         int qty = sizingService.calculate(config, signal.getEntryPrice(), signal.getStopLoss(), margin);
         if (qty <= 0) {
-            log.warn("Insufficient capital: user {} signal {} entry={} — skipping",
-                    userId, signal.getId(), signal.getEntryPrice());
+            log.warn("[TRADE] user={} signal={} symbol={} entry={} — insufficient capital, skipping",
+                    userId, signal.getId(), signal.getSymbol(), signal.getEntryPrice());
             return;
         }
 
+        log.info("[TRADE] placing order: user={} signal={} symbol={} qty={} entry={}",
+                userId, signal.getId(), signal.getSymbol(), qty, signal.getEntryPrice());
         Long positionId = db.createPendingPosition(config, signal, qty);
         String tag = "pos_" + positionId; // layer 3: Zerodha tag = positionId
 
@@ -143,13 +149,13 @@ public class PortfolioEngine {
             String orderId = broker.placeLimitOrder(signal.getSymbol(), qty, signal.getEntryPrice(), tag);
             db.recordEntryOrder(positionId, config, signal, orderId, qty);
             events.publishEvent(new OrderPlacedEvent(positionId, signal.getSymbol(), orderId));
-            log.info("Entry order placed: pos={} order={} symbol={} qty={} price={}",
+            log.info("[TRADE] order placed: pos={} orderId={} symbol={} qty={} price={}",
                     positionId, orderId, signal.getSymbol(), qty, signal.getEntryPrice());
         } catch (BrokerException e) {
             // Any broker failure (order rejection OR network error) must roll back the pending position.
             // Without this, a failed placeLimitOrder leaves a stranded PENDING_ENTRY row in the DB.
             db.cancelPosition(positionId);
-            log.error("Error {}", e);
+            log.error("[TRADE] order placement failed for pos={} signal={}: {}", positionId, signal.getId(), e.getMessage());
             throw e;
         }
     }
@@ -164,6 +170,7 @@ public class PortfolioEngine {
         Map<Long, List<Position>> byUser = pending.stream()
                 .collect(Collectors.groupingBy(p -> p.getUser().getId()));
 
+        log.info("[FILL] START — {} pending position(s) across {} user(s)", pending.size(), byUser.size());
         for (Map.Entry<Long, List<Position>> entry : byUser.entrySet()) {
             db.getUserConfigByUserId(entry.getKey()).ifPresent(config -> {
                 try {
@@ -172,7 +179,7 @@ public class PortfolioEngine {
                         checkFillForPosition(config, broker, pos);
                     }
                 } catch (BrokerTokenException e) {
-                    log.warn("Fill check — user {} skipped: token expired", entry.getKey());
+                    log.warn("[FILL] user={} skipped — token expired", entry.getKey());
                 }
             });
         }
@@ -182,11 +189,12 @@ public class PortfolioEngine {
         String orderId = pos.getEntryOrderId();
         if (orderId == null) return;
 
+        log.info("[FILL] checking pos={} symbol={} order={}", pos.getId(), pos.getSymbol(), orderId);
         BrokerOrderDetail detail;
         try {
             detail = broker.getOrderDetail(orderId);
         } catch (BrokerNetworkException e) {
-            log.warn("Fill check — could not get order detail for pos {}: {}", pos.getId(), e.getMessage());
+            log.warn("[FILL] could not get order detail for pos={}: {}", pos.getId(), e.getMessage());
             return;
         }
 
@@ -195,7 +203,7 @@ public class PortfolioEngine {
         } else if (detail.isFailed()) {
             db.markPositionCancelled(pos.getId());
             events.publishEvent(new OrderCancelledEvent(pos.getId(), pos.getSymbol(), orderId, detail.status().name()));
-            log.info("Fill check — pos {} order {} {}", pos.getId(), orderId, detail.status());
+            log.info("[FILL] CANCELLED pos={} symbol={} order={} status={}", pos.getId(), pos.getSymbol(), orderId, detail.status());
         } else {
             // Still PENDING — check expiry
             checkExpiry(config, broker, pos, orderId);
@@ -226,7 +234,7 @@ public class PortfolioEngine {
         db.activatePosition(pos.getId(), filledQty, detail.avgPrice(), gttId);
         events.publishEvent(new OrderFilledEvent(pos.getId(), pos.getSymbol(), pos.getEntryOrderId(),
                 filledQty, detail.avgPrice(), gttId));
-        log.info("Fill detected: pos={} qty={} avgPrice={} gttId={}", pos.getId(), filledQty, detail.avgPrice(), gttId);
+        log.info("[FILL] FILLED pos={} symbol={} qty={} avgPrice={} gttId={}", pos.getId(), pos.getSymbol(), filledQty, detail.avgPrice(), gttId);
     }
 
     private void checkExpiry(UserConfig config, BrokerAdapter broker, Position pos, String orderId) {
@@ -241,7 +249,7 @@ public class PortfolioEngine {
                 }
                 db.markPositionCancelled(pos.getId());
                 events.publishEvent(new OrderExpiredEvent(pos.getId(), pos.getSymbol(), orderId));
-                log.info("Order expired: pos={} order={} ageDays={}", pos.getId(), orderId, ageDays);
+                log.info("[FILL] EXPIRED pos={} symbol={} order={} ageDays={}", pos.getId(), pos.getSymbol(), orderId, ageDays);
             }
         });
     }
@@ -256,6 +264,8 @@ public class PortfolioEngine {
                 .filter(p -> p.getGttOrderId() != null)
                 .collect(Collectors.groupingBy(p -> p.getUser().getId()));
 
+        log.info("[GTT] START — {} active position(s) with GTT across {} user(s)",
+                byUser.values().stream().mapToInt(List::size).sum(), byUser.size());
         for (Map.Entry<Long, List<Position>> entry : byUser.entrySet()) {
             db.getUserConfigByUserId(entry.getKey()).ifPresent(config -> {
                 try {
@@ -264,19 +274,19 @@ public class PortfolioEngine {
                         reconcileGtt(pos, broker);
                     }
                 } catch (BrokerTokenException e) {
-                    log.warn("GTT reconcile — user {} skipped: token expired", entry.getKey());
+                    log.warn("[GTT] user={} skipped — token expired", entry.getKey());
                 }
             });
         }
     }
 
     private void reconcileGtt(Position pos, BrokerAdapter broker) {
+        log.info("[GTT] checking pos={} symbol={} gttId={}", pos.getId(), pos.getSymbol(), pos.getGttOrderId());
         GttStatusResult gttStatus;
         try {
             gttStatus = broker.getGttStatus(pos.getGttOrderId());
         } catch (BrokerNetworkException e) {
-            log.warn("GTT reconcile — could not fetch GTT {} for pos {}: {}",
-                    pos.getGttOrderId(), pos.getId(), e.getMessage());
+            log.warn("[GTT] could not fetch gttId={} for pos={}: {}", pos.getGttOrderId(), pos.getId(), e.getMessage());
             return;
         }
 
@@ -296,13 +306,14 @@ public class PortfolioEngine {
 
         db.closePosition(pos.getId(), closeStatus, pnl);
         events.publishEvent(new PositionClosedEvent(pos.getId(), pos.getSymbol(), closeStatus, pnl));
-        log.info("GTT triggered: pos={} symbol={} status={} pnl={}", pos.getId(), pos.getSymbol(), closeStatus, pnl);
+        log.info("[GTT] TRIGGERED pos={} symbol={} status={} pnl={}", pos.getId(), pos.getSymbol(), closeStatus, pnl);
     }
 
     // ── Unmanaged position detection ──────────────────────────────────────────
 
     public void detectUnmanagedPositions() {
         List<UserConfig> users = db.getConnectedUsers();
+        log.info("[UNMANAGED] scanning {} connected user(s)", users.size());
         for (UserConfig config : users) {
             try {
                 BrokerAdapter broker = brokerAdapterFactory.forUser(config);
@@ -313,11 +324,11 @@ public class PortfolioEngine {
                         .forEach(h -> {
                             events.publishEvent(new UnmanagedPositionEvent(
                                     config.getUser().getId(), h.symbol(), h.quantity(), h.lastPrice()));
-                            log.warn("Unmanaged position detected: user={} symbol={} qty={}",
+                            log.warn("[UNMANAGED] user={} symbol={} qty={} — not tracked in DB",
                                     config.getUser().getId(), h.symbol(), h.quantity());
                         });
             } catch (BrokerTokenException e) {
-                log.warn("Unmanaged check — user {} skipped: token expired", config.getUser().getId());
+                log.warn("[UNMANAGED] user={} skipped — token expired", config.getUser().getId());
             }
         }
     }
@@ -333,12 +344,13 @@ public class PortfolioEngine {
         UserConfig config = db.getUserConfigByUserId(pos.getUser().getId())
                 .orElseThrow(() -> new IllegalStateException("No config for user " + pos.getUser().getId()));
 
+        log.info("[MANUAL] START pos={} symbol={} user={}", positionId, pos.getSymbol(), pos.getUser().getId());
         BrokerAdapter broker = brokerAdapterFactory.forUser(config);
 
         // Cancel GTT so it doesn't fire after we sell
         if (pos.getGttOrderId() != null) {
             try { broker.cancelGttOrder(pos.getGttOrderId()); }
-            catch (Exception e) { log.warn("Could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
+            catch (Exception e) { log.warn("[MANUAL] could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
         }
 
         // Place CNC market sell order to actually exit the position.
@@ -346,12 +358,12 @@ public class PortfolioEngine {
         String tag = "pos_" + positionId + "_manual";
         String sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
         db.recordManualExitOrder(positionId, sellOrderId);
-        log.info("Market sell placed: pos={} symbol={} qty={} order={}",
+        log.info("[MANUAL] market sell placed pos={} symbol={} qty={} order={}",
                 positionId, pos.getSymbol(), pos.getQuantity(), sellOrderId);
 
         db.closePosition(positionId, PositionStatus.CLOSED_MANUAL, null);
         events.publishEvent(new PositionClosedEvent(positionId, pos.getSymbol(),
                 PositionStatus.CLOSED_MANUAL, null));
-        log.info("Manual exit complete: pos={} symbol={}", positionId, pos.getSymbol());
+        log.info("[MANUAL] DONE pos={} symbol={}", positionId, pos.getSymbol());
     }
 }

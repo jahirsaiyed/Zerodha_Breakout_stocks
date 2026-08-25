@@ -44,6 +44,9 @@ public class SignalScoringService {
     private final GoogleFinancePriceService googleFinancePriceService;
 
     public List<ScoredSignal> rank(List<Signal> candidates, Map<String, BigDecimal> quotes) {
+        int brokerQuoteCount = (int) candidates.stream()
+                .filter(c -> quotes.containsKey(c.getSymbol())).count();
+        log.info("[SCORE] {} candidate(s) — broker quotes: {}/{}", candidates.size(), brokerQuoteCount, candidates.size());
         Map<String, BigDecimal> workingQuotes = resolveQuotes(candidates, quotes);
 
         // Step 1: filter invalid and compute proximity
@@ -105,6 +108,16 @@ public class SignalScoringService {
         }
 
         Collections.sort(scored); // descending by score
+
+        if (scored.isEmpty()) {
+            log.info("[SCORE] ranked=0/{} candidate(s) — all disqualified or unresolved", candidates.size());
+        } else {
+            ScoredSignal top = scored.get(0);
+            log.info("[SCORE] ranked={}/{} candidate(s) — top: symbol={} score={}",
+                    scored.size(), candidates.size(), top.signal().getSymbol(),
+                    top.score().setScale(4, RoundingMode.HALF_UP));
+        }
+
         return scored;
     }
 
@@ -121,9 +134,9 @@ public class SignalScoringService {
 
         if (missing.isEmpty()) return quotes;
 
-        log.debug("Fetching {} missing quote(s) from Google Finance: {}", missing.size(), missing);
+        log.info("[SCORE] fetching {} missing symbol(s) from Google Finance: {}", missing.size(), missing);
         Map<String, BigDecimal> gfPrices = googleFinancePriceService.getPrices(missing);
-        log.debug("Google Finance resolved {}/{} missing quote(s)", gfPrices.size(), missing.size());
+        log.info("[SCORE] Google Finance resolved {}/{} missing symbol(s)", gfPrices.size(), missing.size());
 
         Map<String, BigDecimal> merged = new HashMap<>(quotes);
         merged.putAll(gfPrices);
