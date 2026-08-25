@@ -124,6 +124,18 @@ function PlaceOrderModal({ signal, onClose, onSuccess }: PlaceOrderModalProps) {
                   <Row label="Estimated cost"
                     value={preview.canPlace ? `₹${fmt(preview.estimatedCost)}` : '—'}
                     highlight={preview.canPlace} />
+                  {preview.canPlace && (() => {
+                    const atRisk = preview.estimatedQty * (preview.entryPrice - preview.stopLoss)
+                    const riskPct = preview.estimatedCost > 0 ? (atRisk / preview.estimatedCost) * 100 : null
+                    return (
+                      <Row
+                        label="Max loss if SL hit"
+                        value={`₹${fmt(Math.max(0, atRisk))}`}
+                        danger
+                        sub={riskPct != null ? `(${riskPct.toFixed(1)}% of capital)` : undefined}
+                      />
+                    )
+                  })()}
                   <Row label="R:R ratio" value={`${Number(signal.riskRewardRatio).toFixed(2)}x`} />
                   {preview.availableMargin != null && (
                     <Row label="Available margin" value={`₹${fmt(preview.availableMargin)}`} />
@@ -173,11 +185,14 @@ function PlaceOrderModal({ signal, onClose, onSuccess }: PlaceOrderModalProps) {
   )
 }
 
-function Row({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
+function Row({ label, value, highlight = false, danger = false, sub }: { label: string; value: string; highlight?: boolean; danger?: boolean; sub?: string }) {
   return (
     <div className="flex items-center justify-between px-4 py-2.5">
       <span className="text-xs text-gray-500">{label}</span>
-      <span className={`text-sm font-medium ${highlight ? 'text-indigo-700' : 'text-gray-700'}`}>{value}</span>
+      <div className="flex items-baseline gap-1.5">
+        <span className={`text-sm font-medium ${danger ? 'text-red-600' : highlight ? 'text-indigo-700' : 'text-gray-700'}`}>{value}</span>
+        {sub && <span className="text-xs text-red-400">{sub}</span>}
+      </div>
     </div>
   )
 }
