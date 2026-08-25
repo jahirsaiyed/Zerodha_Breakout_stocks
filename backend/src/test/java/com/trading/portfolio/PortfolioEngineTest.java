@@ -127,7 +127,7 @@ class PortfolioEngineTest {
 
         engine.checkOrderFills();
 
-        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(4), any(BigDecimal.class), eq("pos_10"));
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(2), any(BigDecimal.class), eq("pos_10")); // GTT for half qty
         verify(broker, never()).placeGttOcoOrder(anyString(), anyInt(), any(), any(), anyString());
         verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456");
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
@@ -163,11 +163,11 @@ class PortfolioEngineTest {
     // ── reconcileGttExits ────────────────────────────────────────────────────
 
     @Test
-    @DisplayName("reconcileGttExits closes position at target")
-    void reconcileGttExits_targetHit_closesWithTargetStatus() {
+    @DisplayName("reconcileGttExits partial exit: qty=4 triggered → sells 2, keeps 2 ACTIVE at breakeven SL")
+    void reconcileGttExits_targetHit_qty4_partialExit() {
         Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
         Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
-        GttStatusResult triggered = new GttStatusResult(true, BigDecimal.valueOf(2605)); // above target
+        GttStatusResult triggered = new GttStatusResult(true, BigDecimal.valueOf(2605));
 
         when(db.getActivePositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
@@ -176,28 +176,40 @@ class PortfolioEngineTest {
 
         engine.reconcileGttExits();
 
-        ArgumentCaptor<PositionStatus> statusCaptor = ArgumentCaptor.forClass(PositionStatus.class);
-        verify(db).closePosition(eq(10L), statusCaptor.capture(), any());
-        assertThat(statusCaptor.getValue()).isEqualTo(PositionStatus.CLOSED_TARGET);
+        // soldQty = 4/2 = 2, remainingQty = 2 — partial exit, NOT a full close
+        verify(db).partialExitPosition(eq(10L), eq(2), any(BigDecimal.class));
+        verify(db, never()).closePosition(any(), any(), any());
+        verify(events).publishEvent(any(com.trading.portfolio.events.TargetPartialExitEvent.class));
     }
 
     @Test
-    @DisplayName("reconcileGttExits closes position at stop-loss")
-    void reconcileGttExits_slHit_closesWithSlStatus() {
+    @DisplayName("reconcileGttExits full close: qty=1 triggered → closes as CLOSED_TARGET")
+    void reconcileGttExits_targetHit_qty1_closesFully() {
         Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
-        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
-        GttStatusResult triggered = new GttStatusResult(true, BigDecimal.valueOf(2295)); // below sl
+        // Build position with qty=1
+        Position pos = new Position();
+        pos.setId(11L);
+        pos.setUser(user);
+        pos.setSymbol("RELIANCE");
+        pos.setSignal(signal);
+        pos.setQuantity(1);
+        pos.setAvgEntryPrice(BigDecimal.valueOf(2410));
+        pos.setGttOrderId("GTT789");
+        pos.setStatus(PositionStatus.ACTIVE);
+        pos.setOpenedAt(java.time.LocalDateTime.now());
+        GttStatusResult triggered = new GttStatusResult(true, BigDecimal.valueOf(2605));
 
         when(db.getActivePositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
-        when(broker.getGttStatus("GTT456")).thenReturn(triggered);
+        when(broker.getGttStatus("GTT789")).thenReturn(triggered);
 
         engine.reconcileGttExits();
 
-        ArgumentCaptor<PositionStatus> statusCaptor = ArgumentCaptor.forClass(PositionStatus.class);
-        verify(db).closePosition(eq(10L), statusCaptor.capture(), any());
-        assertThat(statusCaptor.getValue()).isEqualTo(PositionStatus.CLOSED_SL);
+        // soldQty = max(1, 1/2) = 1, remainingQty = 0 → full close
+        verify(db).closePosition(eq(11L), eq(PositionStatus.CLOSED_TARGET), any());
+        verify(db, never()).partialExitPosition(any(), anyInt(), any());
+        verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
     }
 
     @Test
@@ -331,6 +343,27 @@ class PortfolioEngineTest {
         engine.checkClosingBasisStopLoss(StopLossBasis.WEEKLY);
 
         verify(db, never()).getUserConfigByUserId(anyLong());
+    }
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss uses breakeven SL when set, ignoring signal SL")
+    void checkClosingBasisStopLoss_breakevenSlSet_usesBreakevenNotSignalSl() {
+        // Signal SL = 2300, breakeven SL = 2410 (avg entry). LTP = 2380: above signal SL but below breakeven.
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, null, BigDecimal.valueOf(2410));
+        pos.setBreakevenSl(BigDecimal.valueOf(2410)); // breakeven SL set after partial exit
+
+        when(db.getActivePositionsByBasis(StopLossBasis.DAILY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2380))); // 2380 < breakeven 2410
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString())).thenReturn("SELL_BREAKEVEN");
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+
+        // Should sell because LTP < breakevenSl, even though LTP > signal.stopLoss
+        verify(broker).placeMarketSellOrder(eq("RELIANCE"), eq(4), anyString());
+        verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_SL), any());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

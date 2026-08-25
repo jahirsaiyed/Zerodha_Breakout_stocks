@@ -17,7 +17,8 @@ public record LivePositionResponse(
         BigDecimal signalTarget,
         String status,
         BigDecimal ltp,
-        BigDecimal unrealisedPnl
+        BigDecimal unrealisedPnl,
+        BigDecimal breakevenSl
 ) {
     public static LivePositionResponse of(
             com.trading.signals.Position pos, BigDecimal ltp) {
@@ -36,7 +37,8 @@ public record LivePositionResponse(
                 pos.getSignal() != null ? pos.getSignal().getTarget() : null,
                 pos.getStatus().name(),
                 ltp,
-                unrealised
+                unrealised,
+                pos.getBreakevenSl()
         );
     }
 }

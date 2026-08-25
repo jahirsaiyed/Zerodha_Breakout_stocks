@@ -38,6 +38,9 @@ public class Position {
     @Column(name = "gtt_order_id")
     private String gttOrderId;
 
+    @Column(name = "breakeven_sl")
+    private BigDecimal breakevenSl;
+
     @Builder.Default
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)

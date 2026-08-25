@@ -221,11 +221,13 @@ public class PortfolioEngine {
             catch (Exception e) { log.warn("Could not cancel partial order {}: {}", pos.getEntryOrderId(), e.getMessage()); }
         }
 
-        // Place single-leg GTT for target only — SL is managed by the closing-basis scheduler.
+        // Place single-leg GTT for HALF the filled quantity — on trigger only 50% is sold;
+        // the remaining half stays ACTIVE with SL moved to breakeven (avgEntryPrice).
         Signal signal = pos.getSignal();
+        int halfQty = Math.max(1, filledQty / 2);
         String gttId = null;
         try {
-            gttId = broker.placeGttTargetOrder(pos.getSymbol(), filledQty,
+            gttId = broker.placeGttTargetOrder(pos.getSymbol(), halfQty,
                     signal.getTarget(), "pos_" + pos.getId());
         } catch (BrokerOrderException e) {
             log.error("GTT target placement failed for pos {}: {} — position marked ACTIVE without GTT",
@@ -294,20 +296,30 @@ public class PortfolioEngine {
         if (!gttStatus.triggered()) return;
 
         BigDecimal fillPrice = gttStatus.filledPrice();
-        Signal signal = pos.getSignal();
 
-        // Determine exit type by comparing fill price to SL vs target
-        PositionStatus closeStatus = fillPrice.compareTo(signal.getTarget()) >= 0
-                ? PositionStatus.CLOSED_TARGET : PositionStatus.CLOSED_SL;
+        // GTT is single-leg target-only — a trigger always means target was reached.
+        // The GTT was placed for floor(qty/2) shares; remaining = qty - soldQty stays ACTIVE.
+        int soldQty = Math.max(1, pos.getQuantity() / 2);
+        int remainingQty = pos.getQuantity() - soldQty;
 
-        // Realised P&L = (fillPrice - avgEntryPrice) × quantity
-        BigDecimal pnl = fillPrice.subtract(pos.getAvgEntryPrice())
-                .multiply(BigDecimal.valueOf(pos.getQuantity()))
-                .setScale(2, RoundingMode.HALF_UP);
+        if (remainingQty <= 0) {
+            // qty=1 edge case: sell the only share → close fully
+            BigDecimal pnl = fillPrice.subtract(pos.getAvgEntryPrice())
+                    .multiply(BigDecimal.valueOf(soldQty))
+                    .setScale(2, RoundingMode.HALF_UP);
+            db.closePosition(pos.getId(), PositionStatus.CLOSED_TARGET, pnl);
+            events.publishEvent(new PositionClosedEvent(pos.getId(), pos.getSymbol(), PositionStatus.CLOSED_TARGET, pnl));
+            log.info("[GTT] CLOSED_TARGET (full) pos={} symbol={} pnl={}", pos.getId(), pos.getSymbol(), pnl);
+            return;
+        }
 
-        db.closePosition(pos.getId(), closeStatus, pnl);
-        events.publishEvent(new PositionClosedEvent(pos.getId(), pos.getSymbol(), closeStatus, pnl));
-        log.info("[GTT] TRIGGERED pos={} symbol={} status={} pnl={}", pos.getId(), pos.getSymbol(), closeStatus, pnl);
+        // Partial exit: sold soldQty shares; keep remaining half ACTIVE at breakeven SL.
+        BigDecimal breakevenSl = pos.getAvgEntryPrice();
+        db.partialExitPosition(pos.getId(), remainingQty, breakevenSl);
+        events.publishEvent(new TargetPartialExitEvent(
+                pos.getId(), pos.getSymbol(), soldQty, remainingQty, fillPrice, breakevenSl));
+        log.info("[GTT] PARTIAL_TARGET pos={} symbol={} sold={} remaining={} fillPrice={} breakevenSl={}",
+                pos.getId(), pos.getSymbol(), soldQty, remainingQty, fillPrice, breakevenSl);
     }
 
     // ── Closing-basis stop-loss check ─────────────────────────────────────────
@@ -362,10 +374,14 @@ public class PortfolioEngine {
             return;
         }
         Signal signal = pos.getSignal();
-        if (ltp.compareTo(signal.getStopLoss()) >= 0) return; // SL not breached
+        BigDecimal effectiveSl = pos.getBreakevenSl() != null ? pos.getBreakevenSl() : signal.getStopLoss();
+        if (ltp.compareTo(effectiveSl) >= 0) return; // SL not breached
+
+        log.info("[SL-{}] effective SL for pos={} is {} ({})", basis, pos.getId(), effectiveSl,
+                pos.getBreakevenSl() != null ? "breakeven" : "signal");
 
         log.info("[SL-{}] TRIGGERED pos={} symbol={} ltp={} sl={} — placing market sell",
-                basis, pos.getId(), pos.getSymbol(), ltp, signal.getStopLoss());
+                basis, pos.getId(), pos.getSymbol(), ltp, effectiveSl);
 
         // Cancel target GTT so it doesn't fire after we sell
         if (pos.getGttOrderId() != null) {

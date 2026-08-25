@@ -126,6 +126,19 @@ public class PortfolioDbService {
         return positionRepository.findActiveBySignalClosingBasis(basis);
     }
 
+    /**
+     * Records a 50% partial exit at target: reduces qty, sets breakeven SL, clears GTT id.
+     * Position status stays ACTIVE so the closing-basis scheduler can handle the remainder.
+     */
+    @Transactional
+    public void partialExitPosition(Long positionId, int remainingQty, BigDecimal breakevenSl) {
+        Position position = positionRepository.findById(positionId).orElseThrow();
+        position.setQuantity(remainingQty);
+        position.setBreakevenSl(breakevenSl);
+        position.setGttOrderId(null);
+        positionRepository.save(position);
+    }
+
     @Transactional
     public void activatePosition(Long positionId, int filledQty,
                                  BigDecimal avgPrice, String gttId) {

@@ -82,6 +82,17 @@ public class PortfolioEventListener {
 
     @Async
     @EventListener
+    public void onTargetPartialExit(TargetPartialExitEvent event) {
+        String msg = "Target reached — 50% sold\n"
+                + "Symbol: " + event.symbol() + "\n"
+                + "Sold: " + event.soldQty() + " shares @ ₹" + format(event.fillPrice()) + "\n"
+                + "Remaining: " + event.remainingQty() + " shares\n"
+                + "New SL (breakeven): ₹" + format(event.breakevenSl());
+        notifications.notifyForPosition(event.positionId(), msg);
+    }
+
+    @Async
+    @EventListener
     public void onUnmanagedPosition(UnmanagedPositionEvent event) {
         String msg = "Alert: unmanaged position detected\n"
                 + "Symbol: " + event.symbol() + "\n"

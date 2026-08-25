@@ -38,6 +38,7 @@ export interface Position {
   signalEntryPrice: number | null
   signalStopLoss: number | null
   signalTarget: number | null
+  breakevenSl: number | null
 }
 
 export interface UserConfig {
@@ -81,6 +82,7 @@ export interface LivePosition {
   status: string
   ltp: number | null
   unrealisedPnl: number | null
+  breakevenSl: number | null
 }
 
 export interface Order {
