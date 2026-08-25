@@ -1,5 +1,6 @@
 package com.trading.portfolio;
 
+import com.trading.signals.StopLossBasis;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,5 +51,34 @@ public class PortfolioScheduler {
     public void detectUnmanagedPositions() {
         log.debug("Scheduler: detectUnmanagedPositions triggered");
         engine.detectUnmanagedPositions();
+    }
+
+    /**
+     * Closing-basis SL check — HOURLY: runs at :02 of each market hour (09:02–15:02 IST).
+     * LTP at 2 min past the hour approximates the just-closed hourly candle close.
+     */
+    @Scheduled(cron = "0 2 9-15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void checkHourlyStopLoss() {
+        log.debug("Scheduler: checkHourlyStopLoss triggered");
+        engine.checkClosingBasisStopLoss(StopLossBasis.HOURLY);
+    }
+
+    /**
+     * Closing-basis SL check — DAILY: runs at 15:32 IST Mon–Fri (after market close).
+     * LTP at this time equals the day's closing price.
+     */
+    @Scheduled(cron = "0 32 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void checkDailyStopLoss() {
+        log.debug("Scheduler: checkDailyStopLoss triggered");
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+    }
+
+    /**
+     * Closing-basis SL check — WEEKLY: runs at 15:32 IST on Fridays (after weekly close).
+     */
+    @Scheduled(cron = "0 32 15 * * FRI", zone = "Asia/Kolkata")
+    public void checkWeeklyStopLoss() {
+        log.debug("Scheduler: checkWeeklyStopLoss triggered");
+        engine.checkClosingBasisStopLoss(StopLossBasis.WEEKLY);
     }
 }

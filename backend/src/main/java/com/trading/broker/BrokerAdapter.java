@@ -35,6 +35,13 @@ public interface BrokerAdapter {
      */
     String placeGttOcoOrder(String symbol, int quantity, BigDecimal stopLoss, BigDecimal target, String tag);
 
+    /**
+     * Places a single-leg GTT order for the target price only (used when SL is managed
+     * by the closing-basis scheduler instead of a GTT leg).
+     * @return broker-assigned GTT trigger ID
+     */
+    String placeGttTargetOrder(String symbol, int quantity, BigDecimal target, String tag);
+
     /** Cancels a regular order by order ID. */
     void cancelOrder(String orderId);
 

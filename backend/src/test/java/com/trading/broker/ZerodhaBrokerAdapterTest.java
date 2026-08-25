@@ -73,6 +73,34 @@ class ZerodhaBrokerAdapterTest {
                 .hasMessageContaining("LTP");
     }
 
+    // ── placeGttTargetOrder ──────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("placeGttTargetOrder fetches LTP then places single-leg GTT")
+    void placeGttTargetOrder_fetchesLtpThenPlacesGtt() {
+        when(apiClient.getQuotes(List.of("TCS")))
+                .thenReturn(Map.of("TCS", new BigDecimal("3500")));
+        when(apiClient.placeGttTargetOrder(eq("TCS"), eq(5),
+                eq(new BigDecimal("3900")), eq(new BigDecimal("3500")), eq("pos_2")))
+                .thenReturn("gtt789");
+
+        String gttId = adapter.placeGttTargetOrder("TCS", 5, new BigDecimal("3900"), "pos_2");
+
+        assertThat(gttId).isEqualTo("gtt789");
+        verify(apiClient).placeGttTargetOrder("TCS", 5, new BigDecimal("3900"), new BigDecimal("3500"), "pos_2");
+    }
+
+    @Test
+    @DisplayName("placeGttTargetOrder throws BrokerOrderException when LTP unavailable")
+    void placeGttTargetOrder_ltpUnavailable_throws() {
+        when(apiClient.getQuotes(List.of("UNKNOWN"))).thenReturn(Map.of());
+
+        assertThatThrownBy(() -> adapter.placeGttTargetOrder(
+                "UNKNOWN", 5, new BigDecimal("120"), "pos_3"))
+                .isInstanceOf(BrokerOrderException.class)
+                .hasMessageContaining("LTP");
+    }
+
     // ── placeMarketSellOrder ─────────────────────────────────────────────────
 
     @Test

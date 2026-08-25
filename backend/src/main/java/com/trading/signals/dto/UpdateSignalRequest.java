@@ -1,5 +1,6 @@
 package com.trading.signals.dto;
 
+import com.trading.signals.StopLossBasis;
 import jakarta.validation.constraints.Positive;
 
 import java.math.BigDecimal;
@@ -13,6 +14,8 @@ public record UpdateSignalRequest(
 
         @Positive(message = "target must be positive")
         BigDecimal target,
+
+        StopLossBasis closingBasis,
 
         String notes
 ) {}

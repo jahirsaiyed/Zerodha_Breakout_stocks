@@ -1,5 +1,6 @@
 package com.trading.signals.dto;
 
+import com.trading.signals.StopLossBasis;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
@@ -21,6 +22,9 @@ public record CreateSignalRequest(
         @NotNull(message = "target is required")
         @Positive(message = "target must be positive")
         BigDecimal target,
+
+        @NotNull(message = "closingBasis is required")
+        StopLossBasis closingBasis,
 
         String notes
 ) {}

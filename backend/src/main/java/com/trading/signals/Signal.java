@@ -46,6 +46,11 @@ public class Signal {
 
     private String notes;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "closing_basis", nullable = false)
+    private StopLossBasis closingBasis = StopLossBasis.DAILY;
+
     @CreationTimestamp
     @Column(name = "added_at", nullable = false, updatable = false)
     private LocalDateTime addedAt;

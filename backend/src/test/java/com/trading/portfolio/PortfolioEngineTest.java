@@ -2,6 +2,7 @@ package com.trading.portfolio;
 
 import com.trading.broker.*;
 import com.trading.signals.*;
+import com.trading.signals.StopLossBasis;
 import com.trading.users.PositionSizingMethod;
 import com.trading.users.User;
 import com.trading.users.UserConfig;
@@ -122,10 +123,12 @@ class PortfolioEngineTest {
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
         when(broker.getOrderDetail("ORD123")).thenReturn(detail);
-        when(broker.placeGttOcoOrder(anyString(), anyInt(), any(), any(), anyString())).thenReturn("GTT456");
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT456");
 
         engine.checkOrderFills();
 
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(4), any(BigDecimal.class), eq("pos_10"));
+        verify(broker, never()).placeGttOcoOrder(anyString(), anyInt(), any(), any(), anyString());
         verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456");
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
     }
@@ -263,6 +266,71 @@ class PortfolioEngineTest {
         assertThatThrownBy(() -> engine.manualExit(99L))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("99");
+    }
+
+    // ── checkClosingBasisStopLoss ─────────────────────────────────────────────
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss triggers market sell when LTP is below stop-loss")
+    void checkClosingBasisStopLoss_ltpBelowSl_placesMarketSell() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositionsByBasis(StopLossBasis.DAILY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2250))); // below SL 2300
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString())).thenReturn("SELL999");
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+
+        verify(broker).cancelGttOrder("GTT456");
+        verify(broker).placeMarketSellOrder(eq("RELIANCE"), eq(4), anyString());
+        verify(db).recordManualExitOrder(10L, "SELL999");
+        verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_SL), any());
+        verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
+    }
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss does not sell when LTP is above stop-loss")
+    void checkClosingBasisStopLoss_ltpAboveSl_doesNothing() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositionsByBasis(StopLossBasis.DAILY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2350))); // above SL 2300
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), anyString());
+        verify(db, never()).closePosition(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss skips user when token expired")
+    void checkClosingBasisStopLoss_tokenExpired_skipsUser() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositionsByBasis(StopLossBasis.HOURLY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenThrow(new BrokerTokenException("expired"));
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.HOURLY);
+
+        verify(db, never()).closePosition(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss returns early when no active positions")
+    void checkClosingBasisStopLoss_noPositions_returnsEarly() {
+        when(db.getActivePositionsByBasis(StopLossBasis.WEEKLY)).thenReturn(List.of());
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.WEEKLY);
+
+        verify(db, never()).getUserConfigByUserId(anyLong());
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

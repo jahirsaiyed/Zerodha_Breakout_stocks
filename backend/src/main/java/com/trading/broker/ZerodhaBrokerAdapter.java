@@ -40,6 +40,14 @@ public class ZerodhaBrokerAdapter implements BrokerAdapter {
     }
 
     @Override
+    public String placeGttTargetOrder(String symbol, int quantity, BigDecimal target, String tag) {
+        BigDecimal lastPrice = fetchLastPrice(symbol);
+        log.debug("Placing GTT target: symbol={} qty={} target={} ltp={} tag={}",
+                symbol, quantity, target, lastPrice, tag);
+        return apiClient.placeGttTargetOrder(symbol, quantity, target, lastPrice, tag);
+    }
+
+    @Override
     public void cancelOrder(String orderId) {
         log.debug("Cancelling order: {}", orderId);
         apiClient.cancelOrder(orderId);

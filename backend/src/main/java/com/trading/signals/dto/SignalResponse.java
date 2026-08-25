@@ -3,6 +3,7 @@ package com.trading.signals.dto;
 import com.trading.signals.Signal;
 import com.trading.signals.SignalSource;
 import com.trading.signals.SignalStatus;
+import com.trading.signals.StopLossBasis;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -17,6 +18,7 @@ public record SignalResponse(
         SignalSource source,
         String sourceRef,
         SignalStatus status,
+        StopLossBasis closingBasis,
         String notes,
         LocalDateTime addedAt,
         LocalDateTime updatedAt
@@ -32,6 +34,7 @@ public record SignalResponse(
                 signal.getSource(),
                 signal.getSourceRef(),
                 signal.getStatus(),
+                signal.getClosingBasis(),
                 signal.getNotes(),
                 signal.getAddedAt(),
                 signal.getUpdatedAt()

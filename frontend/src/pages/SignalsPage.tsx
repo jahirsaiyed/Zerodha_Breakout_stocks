@@ -2,12 +2,14 @@ import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
-import type { Signal, SignalQuote } from '../lib/types'
+import type { Signal, SignalQuote, StopLossBasis } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
 
-const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', notes: '' }
+const BASIS_OPTIONS: StopLossBasis[] = ['DAILY', 'HOURLY', 'WEEKLY']
 
-type EditState = { id: number; entryPrice: string; stopLoss: string; target: string; notes: string }
+const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', closingBasis: 'DAILY' as StopLossBasis, notes: '' }
+
+type EditState = { id: number; entryPrice: string; stopLoss: string; target: string; closingBasis: StopLossBasis; notes: string }
 
 
 function diffBg(diff: number | null): string {
@@ -45,6 +47,7 @@ export function SignalsPage() {
       entryPrice: Number(body.entryPrice),
       stopLoss: Number(body.stopLoss),
       target: Number(body.target),
+      closingBasis: body.closingBasis,
       notes: body.notes || null,
     }),
     onSuccess: () => {
@@ -62,6 +65,7 @@ export function SignalsPage() {
       entryPrice: Number(state.entryPrice),
       stopLoss: Number(state.stopLoss),
       target: Number(state.target),
+      closingBasis: state.closingBasis,
       notes: state.notes || null,
     }),
     onSuccess: () => {
@@ -101,6 +105,7 @@ export function SignalsPage() {
       entryPrice: String(sig.entryPrice),
       stopLoss: String(sig.stopLoss),
       target: String(sig.target),
+      closingBasis: sig.closingBasis,
       notes: sig.notes ?? '',
     })
     setEditError('')
@@ -146,18 +151,18 @@ export function SignalsPage() {
       {showForm && (
         <div className="mb-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-5">
           <h2 className="mb-4 text-sm font-semibold text-gray-900">New Signal</h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 lg:grid-cols-5">
+          <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-4 lg:grid-cols-6">
             {[
-              { name: 'symbol',     label: 'Symbol',      placeholder: 'RELIANCE' },
-              { name: 'entryPrice', label: 'Entry Price',  placeholder: '2400' },
-              { name: 'stopLoss',   label: 'Stop Loss',    placeholder: '2300' },
-              { name: 'target',     label: 'Target',       placeholder: '2600' },
-              { name: 'notes',      label: 'Notes',        placeholder: 'Optional' },
+              { name: 'symbol',     label: 'Symbol',     placeholder: 'RELIANCE' },
+              { name: 'entryPrice', label: 'Entry Price', placeholder: '2400' },
+              { name: 'stopLoss',   label: 'Stop Loss',   placeholder: '2300' },
+              { name: 'target',     label: 'Target',      placeholder: '2600' },
+              { name: 'notes',      label: 'Notes',       placeholder: 'Optional' },
             ].map(({ name, label, placeholder }) => (
               <div key={name}>
                 <label className="mb-1 block text-xs font-medium text-gray-600">{label}</label>
                 <input
-                  value={form[name as keyof typeof EMPTY]}
+                  value={form[name as keyof typeof EMPTY] as string}
                   onChange={e => setForm(f => ({ ...f, [name]: e.target.value }))}
                   placeholder={placeholder}
                   required={name !== 'notes'}
@@ -165,7 +170,17 @@ export function SignalsPage() {
                              focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400" />
               </div>
             ))}
-            <div className="col-span-2 flex items-end gap-2 lg:col-span-5">
+            <div>
+              <label className="mb-1 block text-xs font-medium text-gray-600">SL Basis</label>
+              <select value={form.closingBasis}
+                onChange={e => setForm(f => ({ ...f, closingBasis: e.target.value as StopLossBasis }))}
+                required
+                className="w-full rounded-md border border-gray-200 bg-white px-3 py-2 text-sm
+                           focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400">
+                {BASIS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+              </select>
+            </div>
+            <div className="col-span-2 flex items-end gap-2 lg:col-span-6">
               {formError && <p className="text-xs text-red-600">{formError}</p>}
               <button type="submit" disabled={create.isPending}
                 className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white
@@ -194,7 +209,7 @@ export function SignalsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
-                {['#','Symbol','Entry','Stop Loss','Target','R:R','LTP','vs Entry','Source','Status',''].map(h => (
+                {['#','Symbol','Entry','Stop Loss','SL Basis','Target','R:R','LTP','vs Entry','Source','Status',''].map(h => (
                   <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
                 ))}
               </tr>
@@ -214,6 +229,13 @@ export function SignalsPage() {
                       </td>
                       <td className="px-5 py-2">
                         <input value={editState.stopLoss} onChange={setEdit('stopLoss')} className={inputCls} />
+                      </td>
+                      <td className="px-5 py-2">
+                        <select value={editState.closingBasis}
+                          onChange={e => setEditState(prev => prev ? { ...prev, closingBasis: e.target.value as StopLossBasis } : prev)}
+                          className={inputCls}>
+                          {BASIS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+                        </select>
                       </td>
                       <td className="px-5 py-2">
                         <input value={editState.target} onChange={setEdit('target')} className={inputCls} />
@@ -267,6 +289,11 @@ export function SignalsPage() {
                     </td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.entryPrice).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.stopLoss).toFixed(2)}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
+                        {sig.closingBasis}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.target).toFixed(2)}</td>
                     <td className="px-5 py-3.5 text-gray-600">{Number(sig.riskRewardRatio).toFixed(2)}x</td>
                     {/* LTP */}
