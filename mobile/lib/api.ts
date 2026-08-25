@@ -16,7 +16,7 @@ api.interceptors.request.use(async (config: InternalAxiosRequestConfig) => {
 
 // On 401, attempt one refresh then retry
 let isRefreshing = false;
-let pendingRequests: Array<(token: string) => void> = [];
+let pendingRequests: Array<{ resolve: (token: string) => void; reject: (err: unknown) => void }> = [];
 
 api.interceptors.response.use(
   (res) => res,
@@ -28,10 +28,13 @@ api.interceptors.response.use(
     original._retry = true;
 
     if (isRefreshing) {
-      return new Promise((resolve) => {
-        pendingRequests.push((token) => {
-          original.headers = { ...original.headers, Authorization: `Bearer ${token}` };
-          resolve(api(original));
+      return new Promise((resolve, reject) => {
+        pendingRequests.push({
+          resolve: (token) => {
+            original.headers = { ...original.headers, Authorization: `Bearer ${token}` };
+            resolve(api(original));
+          },
+          reject,
         });
       });
     }
@@ -48,14 +51,15 @@ api.interceptors.response.use(
       await SecureStore.setItemAsync('accessToken', newAccess);
       await SecureStore.setItemAsync('refreshToken', newRefresh);
 
-      pendingRequests.forEach((cb) => cb(newAccess));
+      pendingRequests.forEach(({ resolve }) => resolve(newAccess));
       pendingRequests = [];
 
       original.headers = { ...original.headers, Authorization: `Bearer ${newAccess}` };
       return api(original);
-    } catch {
+    } catch (refreshError) {
       await SecureStore.deleteItemAsync('accessToken');
       await SecureStore.deleteItemAsync('refreshToken');
+      pendingRequests.forEach(({ reject }) => reject(refreshError));
       pendingRequests = [];
       return Promise.reject(error);
     } finally {
