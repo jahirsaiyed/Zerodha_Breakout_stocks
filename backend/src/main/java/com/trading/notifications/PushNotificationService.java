@@ -1,5 +1,6 @@
 package com.trading.notifications;
 
+import com.google.firebase.FirebaseApp;
 import com.google.firebase.messaging.FirebaseMessaging;
 import com.google.firebase.messaging.Message;
 import com.google.firebase.messaging.Notification;
@@ -22,6 +23,9 @@ public class PushNotificationService {
      * Failures per device are logged but do not throw.
      */
     public void sendToUser(Long userId, String title, String body, String deepLink) {
+        if (FirebaseApp.getApps().isEmpty()) {
+            return; // Firebase not configured
+        }
         List<DeviceToken> devices = deviceTokenRepository.findByUser_Id(userId);
         if (devices.isEmpty()) return;
 

@@ -9,8 +9,8 @@ WebBrowser.maybeCompleteAuthSession();
 
 export default function ZerodhaConnectScreen() {
   useEffect(() => {
-    Linking.addEventListener('url', handleDeepLink);
-    return () => Linking.removeAllListeners('url');
+    const sub = Linking.addEventListener('url', handleDeepLink);
+    return () => sub.remove();
   }, []);
 
   const handleDeepLink = ({ url }: { url: string }) => {

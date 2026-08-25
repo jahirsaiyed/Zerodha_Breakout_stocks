@@ -3,10 +3,12 @@ import { useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { TouchableOpacity } from 'react-native';
 import { useAuthStore } from '../../store/authStore';
+import { usePushNotifications } from '../../hooks/usePushNotifications';
 
 export default function TabsLayout() {
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
+  usePushNotifications();
 
   const handleLogout = async () => {
     await logout();

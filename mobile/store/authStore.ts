@@ -25,6 +25,12 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
+    // Deregister push token before logout
+    try {
+      await api.delete('/api/users/me/push-token');
+    } catch {
+      // ignore — token may already be expired
+    }
     const refreshToken = await SecureStore.getItemAsync('refreshToken');
     if (refreshToken) {
       try {
