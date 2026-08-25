@@ -35,7 +35,7 @@ class SheetSyncServiceTest {
 
     private SheetRow row(String sourceRef, String symbol, String entry, String sl, String target) {
         return new SheetRow(sourceRef, symbol, new BigDecimal(entry), new BigDecimal(sl),
-                new BigDecimal(target), null);
+                new BigDecimal(target), StopLossBasis.DAILY, null);
     }
 
     private Signal activeSheetSignal(Long id, String sourceRef, String symbol,

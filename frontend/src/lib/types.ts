@@ -5,6 +5,8 @@ export interface SignalQuote {
   diffFromEntryPct: number | null
 }
 
+export type StopLossBasis = 'DAILY' | 'HOURLY' | 'WEEKLY'
+
 export interface Signal {
   id: number
   symbol: string
@@ -15,6 +17,7 @@ export interface Signal {
   source: 'GOOGLE_SHEET' | 'MANUAL'
   sourceRef: string | null
   status: 'ACTIVE' | 'EXPIRED' | 'CANCELLED'
+  closingBasis: StopLossBasis
   notes: string | null
   addedAt: string
   updatedAt: string

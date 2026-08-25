@@ -125,6 +125,32 @@ public class ZerodhaApiClient {
         });
     }
 
+    public String placeGttTargetOrder(String symbol, int quantity,
+                                     BigDecimal target, BigDecimal lastPrice, String tag) {
+        return executeWithRetry(() -> {
+            Map<String, Object> condition = Map.of(
+                    "exchange", "NSE",
+                    "tradingsymbol", symbol,
+                    "last_price", lastPrice.doubleValue(),
+                    "trigger_values", List.of(target.doubleValue())
+            );
+            List<Map<String, Object>> orders = List.of(
+                    Map.of("exchange", "NSE", "tradingsymbol", symbol,
+                            "transaction_type", "SELL", "quantity", quantity,
+                            "order_type", "LIMIT", "product", "CNC",
+                            "price", target.doubleValue())
+            );
+            Map<String, Object> body = Map.of(
+                    "type", "single",
+                    "condition", condition,
+                    "orders", orders
+            );
+
+            JsonNode data = postJson("/gtt/triggers", body);
+            return data.path("trigger_id").asText();
+        });
+    }
+
     public void cancelOrder(String orderId) {
         executeWithRetry(() -> {
             delete("/orders/regular/" + orderId);

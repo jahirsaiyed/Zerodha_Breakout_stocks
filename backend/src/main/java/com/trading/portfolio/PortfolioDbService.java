@@ -121,6 +121,11 @@ public class PortfolioDbService {
         return positionRepository.findByStatus(PositionStatus.ACTIVE);
     }
 
+    @Transactional(readOnly = true)
+    public List<Position> getActivePositionsByBasis(StopLossBasis basis) {
+        return positionRepository.findActiveBySignalClosingBasis(basis);
+    }
+
     @Transactional
     public void activatePosition(Long positionId, int filledQty,
                                  BigDecimal avgPrice, String gttId) {

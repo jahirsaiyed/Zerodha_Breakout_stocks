@@ -62,12 +62,13 @@ public class GoogleSheetsService {
         }
     }
 
-    // Column indices in "NSE Stock break out Ideas" sheet (0-based, range A:Q)
-    private static final int COL_SYMBOL  = 1;  // B
-    private static final int COL_ENTRY   = 10; // K
-    private static final int COL_SL      = 11; // L
-    private static final int COL_TARGET  = 12; // M
-    private static final int COL_NOTES   = 16; // Q
+    // Column indices in "NSE Stock break out Ideas" sheet (0-based, range A:R)
+    private static final int COL_SYMBOL        = 1;  // B
+    private static final int COL_ENTRY         = 10; // K
+    private static final int COL_SL            = 11; // L
+    private static final int COL_TARGET        = 12; // M
+    private static final int COL_CLOSING_BASIS = 13; // N
+    private static final int COL_NOTES         = 16; // Q
 
     private List<SheetRow> parseRows(List<List<Object>> rawRows) {
         // Range starts at A2, so row 2 in the sheet = index 0 in rawRows
@@ -86,10 +87,11 @@ public class GoogleSheetsService {
                 BigDecimal entry  = decimal(row, COL_ENTRY);
                 BigDecimal sl     = decimal(row, COL_SL);
                 BigDecimal target = decimal(row, COL_TARGET);
+                StopLossBasis basis = parseClosingBasis(row);
                 String notes      = row.size() > COL_NOTES ? cell(row, COL_NOTES) : null;
                 String sourceRef  = sheetRowNumber + ":" + symbol;
 
-                SheetRow sheetRow = new SheetRow(sourceRef, symbol, entry, sl, target, notes);
+                SheetRow sheetRow = new SheetRow(sourceRef, symbol, entry, sl, target, basis, notes);
                 if (!sheetRow.isValid()) {
                     log.warn("Skipping invalid row {}: entry={} sl={} target={}", sheetRowNumber, entry, sl, target);
                     sheetRowNumber++;
@@ -117,6 +119,16 @@ public class GoogleSheetsService {
                 new HttpCredentialsAdapter(credentials))
                 .setApplicationName(APPLICATION_NAME)
                 .build();
+    }
+
+    private StopLossBasis parseClosingBasis(List<Object> row) {
+        if (row.size() <= COL_CLOSING_BASIS) return StopLossBasis.DAILY;
+        String raw = cell(row, COL_CLOSING_BASIS).toUpperCase();
+        try {
+            return StopLossBasis.valueOf(raw);
+        } catch (IllegalArgumentException e) {
+            return StopLossBasis.DAILY;
+        }
     }
 
     private String cell(List<Object> row, int idx) {

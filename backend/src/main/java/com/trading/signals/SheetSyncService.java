@@ -125,6 +125,7 @@ public class SheetSyncService {
                 .source(SignalSource.GOOGLE_SHEET)
                 .sourceRef(row.sourceRef())
                 .status(SignalStatus.ACTIVE)
+                .closingBasis(row.closingBasis())
                 .notes(row.notes())
                 .build();
     }
@@ -134,13 +135,15 @@ public class SheetSyncService {
         signal.setStopLoss(row.stopLoss());
         signal.setTarget(row.target());
         signal.setRiskRewardRatio(rrr(row.entryPrice(), row.stopLoss(), row.target()));
+        signal.setClosingBasis(row.closingBasis());
         signal.setNotes(row.notes());
     }
 
     private boolean pricesChanged(Signal signal, SheetRow row) {
         return signal.getEntryPrice().compareTo(row.entryPrice()) != 0
                 || signal.getStopLoss().compareTo(row.stopLoss()) != 0
-                || signal.getTarget().compareTo(row.target()) != 0;
+                || signal.getTarget().compareTo(row.target()) != 0
+                || signal.getClosingBasis() != row.closingBasis();
     }
 
     private boolean notesChanged(Signal signal, SheetRow row) {

@@ -43,7 +43,7 @@ class SignalServiceTest {
     @DisplayName("create: valid input saves signal with correct R:R and uppercased symbol")
     void create_validInput_savesSignalWithCorrectRRR() {
         CreateSignalRequest req = new CreateSignalRequest(
-                "reliance", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"), null);
+                "reliance", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"), StopLossBasis.DAILY, null);
 
         Signal saved = Signal.builder()
                 .id(1L).symbol("RELIANCE")
@@ -64,7 +64,7 @@ class SignalServiceTest {
     @DisplayName("create: entry <= stopLoss throws IllegalArgumentException")
     void create_entryLeThanStopLoss_throws() {
         CreateSignalRequest req = new CreateSignalRequest(
-                "INFY", new BigDecimal("90"), new BigDecimal("100"), new BigDecimal("120"), null);
+                "INFY", new BigDecimal("90"), new BigDecimal("100"), new BigDecimal("120"), StopLossBasis.DAILY, null);
 
         assertThatThrownBy(() -> signalService.create(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -75,7 +75,7 @@ class SignalServiceTest {
     @DisplayName("create: target <= entry throws IllegalArgumentException")
     void create_targetLeEntry_throws() {
         CreateSignalRequest req = new CreateSignalRequest(
-                "INFY", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("95"), null);
+                "INFY", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("95"), StopLossBasis.DAILY, null);
 
         assertThatThrownBy(() -> signalService.create(req))
                 .isInstanceOf(IllegalArgumentException.class)
@@ -97,7 +97,7 @@ class SignalServiceTest {
         when(signalRepository.save(any())).thenReturn(signal);
 
         UpdateSignalRequest req = new UpdateSignalRequest(
-                new BigDecimal("105"), new BigDecimal("92"), new BigDecimal("130"), "updated");
+                new BigDecimal("105"), new BigDecimal("92"), new BigDecimal("130"), StopLossBasis.WEEKLY, "updated");
         signalService.update(1L, req);
 
         assertThat(signal.getEntryPrice()).isEqualByComparingTo("105");
@@ -111,7 +111,7 @@ class SignalServiceTest {
         when(signalRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> signalService.update(99L,
-                new UpdateSignalRequest(null, null, null, null)))
+                new UpdateSignalRequest(null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Signal not found");
     }
@@ -124,7 +124,7 @@ class SignalServiceTest {
         when(positionRepository.existsBySignalIdAndStatusIn(eq(1L), any())).thenReturn(true);
 
         assertThatThrownBy(() -> signalService.update(1L,
-                new UpdateSignalRequest(null, null, null, null)))
+                new UpdateSignalRequest(null, null, null, null, null)))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("active or pending position");
     }

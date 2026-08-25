@@ -55,6 +55,7 @@ public class SignalService {
                 .riskRewardRatio(rrr)
                 .source(SignalSource.MANUAL)
                 .status(SignalStatus.ACTIVE)
+                .closingBasis(req.closingBasis())
                 .notes(req.notes())
                 .build();
         return SignalResponse.from(signalRepository.save(signal));
@@ -75,6 +76,9 @@ public class SignalService {
         signal.setStopLoss(stopLoss);
         signal.setTarget(target);
         signal.setRiskRewardRatio(computeRiskReward(entryPrice, stopLoss, target));
+        if (req.closingBasis() != null) {
+            signal.setClosingBasis(req.closingBasis());
+        }
         if (req.notes() != null) {
             signal.setNotes(req.notes());
         }

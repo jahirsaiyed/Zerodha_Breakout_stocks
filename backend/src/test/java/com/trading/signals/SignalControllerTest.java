@@ -50,7 +50,7 @@ class SignalControllerTest {
             1L, "RELIANCE",
             new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"),
             new BigDecimal("2.0000"),
-            SignalSource.MANUAL, null, SignalStatus.ACTIVE, null,
+            SignalSource.MANUAL, null, SignalStatus.ACTIVE, StopLossBasis.DAILY, null,
             LocalDateTime.now(), LocalDateTime.now());
 
     @Test
@@ -81,7 +81,7 @@ class SignalControllerTest {
     @DisplayName("POST /api/signals valid request returns 201")
     void create_valid_returns201() throws Exception {
         CreateSignalRequest req = new CreateSignalRequest(
-                "RELIANCE", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"), null);
+                "RELIANCE", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"), StopLossBasis.DAILY, null);
         when(signalService.create(any())).thenReturn(SAMPLE);
 
         mockMvc.perform(post("/api/signals")
@@ -110,7 +110,7 @@ class SignalControllerTest {
     @DisplayName("POST /api/signals business rule violation returns 400")
     void create_invalidPrices_returns400() throws Exception {
         CreateSignalRequest req = new CreateSignalRequest(
-                "X", new BigDecimal("90"), new BigDecimal("100"), new BigDecimal("120"), null);
+                "X", new BigDecimal("90"), new BigDecimal("100"), new BigDecimal("120"), StopLossBasis.DAILY, null);
         when(signalService.create(any())).thenThrow(
                 new IllegalArgumentException("entry_price must be greater than stop_loss"));
 
@@ -127,7 +127,7 @@ class SignalControllerTest {
     @DisplayName("PUT /api/signals/{id} returns 200 with updated signal")
     void update_returns200() throws Exception {
         UpdateSignalRequest req = new UpdateSignalRequest(
-                new BigDecimal("105"), new BigDecimal("92"), new BigDecimal("130"), null);
+                new BigDecimal("105"), new BigDecimal("92"), new BigDecimal("130"), null, null);
         when(signalService.update(eq(1L), any())).thenReturn(SAMPLE);
 
         mockMvc.perform(put("/api/signals/1")
@@ -144,7 +144,7 @@ class SignalControllerTest {
         SignalResponse cancelled = new SignalResponse(
                 1L, "RELIANCE", new BigDecimal("100"), new BigDecimal("90"), new BigDecimal("120"),
                 new BigDecimal("2.0000"), SignalSource.MANUAL, null, SignalStatus.CANCELLED,
-                null, LocalDateTime.now(), LocalDateTime.now());
+                StopLossBasis.DAILY, null, LocalDateTime.now(), LocalDateTime.now());
         when(signalService.cancel(1L)).thenReturn(cancelled);
 
         mockMvc.perform(delete("/api/signals/1"))

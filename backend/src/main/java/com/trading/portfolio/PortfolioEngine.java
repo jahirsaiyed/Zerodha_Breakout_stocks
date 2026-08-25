@@ -4,6 +4,7 @@ import com.trading.broker.*;
 import com.trading.portfolio.events.*;
 import com.trading.signals.*;
 import com.trading.users.UserConfig;
+import com.trading.signals.StopLossBasis;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.ApplicationEventPublisher;
@@ -220,14 +221,14 @@ public class PortfolioEngine {
             catch (Exception e) { log.warn("Could not cancel partial order {}: {}", pos.getEntryOrderId(), e.getMessage()); }
         }
 
-        // Place GTT OCO for the filled quantity
+        // Place single-leg GTT for target only — SL is managed by the closing-basis scheduler.
         Signal signal = pos.getSignal();
         String gttId = null;
         try {
-            gttId = broker.placeGttOcoOrder(pos.getSymbol(), filledQty,
-                    signal.getStopLoss(), signal.getTarget(), "pos_" + pos.getId());
+            gttId = broker.placeGttTargetOrder(pos.getSymbol(), filledQty,
+                    signal.getTarget(), "pos_" + pos.getId());
         } catch (BrokerOrderException e) {
-            log.error("GTT placement failed for pos {}: {} — position marked ACTIVE without GTT",
+            log.error("GTT target placement failed for pos {}: {} — position marked ACTIVE without GTT",
                     pos.getId(), e.getMessage());
         }
 
@@ -307,6 +308,89 @@ public class PortfolioEngine {
         db.closePosition(pos.getId(), closeStatus, pnl);
         events.publishEvent(new PositionClosedEvent(pos.getId(), pos.getSymbol(), closeStatus, pnl));
         log.info("[GTT] TRIGGERED pos={} symbol={} status={} pnl={}", pos.getId(), pos.getSymbol(), closeStatus, pnl);
+    }
+
+    // ── Closing-basis stop-loss check ─────────────────────────────────────────
+
+    /**
+     * Checks all ACTIVE positions whose signal has the given {@link StopLossBasis}.
+     * At the moment this runs (scheduled to align with candle closes), the current LTP
+     * approximates the closing price for that timeframe. If LTP is below the signal's
+     * stop-loss, a market sell is placed immediately and the position is closed as SL.
+     */
+    public void checkClosingBasisStopLoss(StopLossBasis basis) {
+        List<Position> positions = db.getActivePositionsByBasis(basis);
+        if (positions.isEmpty()) return;
+
+        Map<Long, List<Position>> byUser = positions.stream()
+                .collect(Collectors.groupingBy(p -> p.getUser().getId()));
+
+        log.info("[SL-{}] START — {} active position(s) across {} user(s)", basis, positions.size(), byUser.size());
+        for (Map.Entry<Long, List<Position>> entry : byUser.entrySet()) {
+            db.getUserConfigByUserId(entry.getKey()).ifPresent(config -> {
+                try {
+                    BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+                    List<String> symbols = entry.getValue().stream()
+                            .map(Position::getSymbol).distinct().toList();
+                    Map<String, BigDecimal> quotes = fetchQuotesSafe(broker, symbols, entry.getKey(), basis.name());
+                    for (Position pos : entry.getValue()) {
+                        checkSlForPosition(pos, broker, quotes, basis);
+                    }
+                } catch (BrokerTokenException e) {
+                    log.warn("[SL-{}] user={} skipped — token expired", basis, entry.getKey());
+                }
+            });
+        }
+        log.info("[SL-{}] DONE", basis);
+    }
+
+    private Map<String, BigDecimal> fetchQuotesSafe(BrokerAdapter broker, List<String> symbols,
+                                                     Long userId, String tag) {
+        try {
+            return broker.getQuotes(symbols);
+        } catch (BrokerNetworkException e) {
+            log.warn("[SL-{}] user={} quotes fetch failed: {} — skipping SL check", tag, userId, e.getMessage());
+            return Map.of();
+        }
+    }
+
+    private void checkSlForPosition(Position pos, BrokerAdapter broker,
+                                    Map<String, BigDecimal> quotes, StopLossBasis basis) {
+        BigDecimal ltp = quotes.get(pos.getSymbol());
+        if (ltp == null) {
+            log.warn("[SL-{}] no LTP for pos={} symbol={} — skipping", basis, pos.getId(), pos.getSymbol());
+            return;
+        }
+        Signal signal = pos.getSignal();
+        if (ltp.compareTo(signal.getStopLoss()) >= 0) return; // SL not breached
+
+        log.info("[SL-{}] TRIGGERED pos={} symbol={} ltp={} sl={} — placing market sell",
+                basis, pos.getId(), pos.getSymbol(), ltp, signal.getStopLoss());
+
+        // Cancel target GTT so it doesn't fire after we sell
+        if (pos.getGttOrderId() != null) {
+            try { broker.cancelGttOrder(pos.getGttOrderId()); }
+            catch (Exception e) { log.warn("[SL-{}] could not cancel GTT {} for pos={}: {}",
+                    basis, pos.getGttOrderId(), pos.getId(), e.getMessage()); }
+        }
+
+        String tag = "pos_" + pos.getId() + "_sl";
+        try {
+            String sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
+            db.recordManualExitOrder(pos.getId(), sellOrderId);
+            log.info("[SL-{}] market sell placed pos={} symbol={} qty={} order={}",
+                    basis, pos.getId(), pos.getSymbol(), pos.getQuantity(), sellOrderId);
+        } catch (BrokerException e) {
+            log.error("[SL-{}] market sell FAILED pos={} symbol={}: {}", basis, pos.getId(), pos.getSymbol(), e.getMessage());
+            return; // do not close position in DB if broker call failed
+        }
+
+        BigDecimal pnl = ltp.subtract(pos.getAvgEntryPrice())
+                .multiply(BigDecimal.valueOf(pos.getQuantity()))
+                .setScale(2, RoundingMode.HALF_UP);
+        db.closePosition(pos.getId(), PositionStatus.CLOSED_SL, pnl);
+        events.publishEvent(new PositionClosedEvent(pos.getId(), pos.getSymbol(), PositionStatus.CLOSED_SL, pnl));
+        log.info("[SL-{}] CLOSED pos={} symbol={} pnl={}", basis, pos.getId(), pos.getSymbol(), pnl);
     }
 
     // ── Unmanaged position detection ──────────────────────────────────────────
