@@ -22,7 +22,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     ['expo-notifications', { icon: './assets/icon.png', color: '#ffffff' }],
   ],
+  updates: {
+    url: 'https://u.expo.dev/5cc1a048-c76f-4ecc-bdc0-16f20f32f90f',
+  },
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
   experiments: {
     typedRoutes: true,
+  },
+  extra: {
+    eas: {
+      projectId: '5cc1a048-c76f-4ecc-bdc0-16f20f32f90f',
+    },
   },
 });
