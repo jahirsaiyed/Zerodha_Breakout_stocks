@@ -25,6 +25,7 @@ class NotificationServiceTest {
     @Mock private PositionRepository positionRepository;
     @Mock private UserConfigRepository userConfigRepository;
     @Mock private EncryptionUtil encryptionUtil;
+    @Mock private PushNotificationService pushNotificationService;
 
     @InjectMocks
     private NotificationService notificationService;

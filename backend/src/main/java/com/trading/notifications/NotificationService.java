@@ -33,6 +33,7 @@ public class NotificationService {
     private final PositionRepository positionRepository;
     private final UserConfigRepository userConfigRepository;
     private final EncryptionUtil encryptionUtil;
+    private final PushNotificationService pushNotificationService;
 
     /**
      * Looks up the owning user for {@code positionId} and sends them a Telegram message.
@@ -57,23 +58,25 @@ public class NotificationService {
     public void notifyUser(Long userId, String message) {
         userConfigRepository.findByUser_Id(userId).ifPresentOrElse(config -> {
             String chatId = config.getTelegramChatId();
-            if (chatId == null || chatId.isBlank()) {
-                log.debug("No Telegram chatId for user {} — notification skipped", userId);
-                return;
-            }
             String encryptedToken = config.getTelegramBotToken();
-            if (encryptedToken == null) {
-                log.debug("No Telegram bot token for user {} — notification skipped", userId);
-                return;
+            if (chatId == null || chatId.isBlank()) {
+                log.debug("No Telegram chatId for user {} — Telegram notification skipped", userId);
+            } else if (encryptedToken == null) {
+                log.debug("No Telegram bot token for user {} — Telegram notification skipped", userId);
+            } else {
+                String token = encryptionUtil.decrypt(encryptedToken);
+                String effectiveChatId = telegramClient.sendMessage(token, chatId, message);
+                if (effectiveChatId != null && !effectiveChatId.equals(chatId)) {
+                    log.info("Updating stored Telegram chatId for user {} from {} to {}",
+                            userId, chatId, effectiveChatId);
+                    config.setTelegramChatId(effectiveChatId);
+                    userConfigRepository.save(config);
+                }
             }
-            String token = encryptionUtil.decrypt(encryptedToken);
-            String effectiveChatId = telegramClient.sendMessage(token, chatId, message);
-            if (effectiveChatId != null && !effectiveChatId.equals(chatId)) {
-                log.info("Updating stored Telegram chatId for user {} from {} to {}",
-                        userId, chatId, effectiveChatId);
-                config.setTelegramChatId(effectiveChatId);
-                userConfigRepository.save(config);
-            }
-        }, () -> log.debug("No user config for user {} — notification skipped", userId));
+            pushNotificationService.sendToUser(userId, "Trading Alert", message, "zbs://dashboard");
+        }, () -> {
+            log.debug("No user config for user {} — notification skipped", userId);
+            pushNotificationService.sendToUser(userId, "Trading Alert", message, "zbs://dashboard");
+        });
     }
 }
