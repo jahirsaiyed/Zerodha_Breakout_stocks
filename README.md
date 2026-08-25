@@ -146,7 +146,8 @@ Key endpoint groups:
 | `POST /api/signals/sync` | Trigger Google Sheets sync |
 | `GET /api/portfolio/positions` | Positions (all or by status) |
 | `GET /api/portfolio/positions/live` | Positions with live LTP |
-| `POST /api/portfolio/positions/{id}/exit` | Manual market exit |
+| `POST /api/portfolio/positions/{id}/cancel` | Cancel a pending entry order |
+| `POST /api/portfolio/positions/{id}/exit` | Manual market exit (close active position) |
 | `GET /api/portfolio/orders` | Order history (paginated) |
 | `GET /api/users/me` | Get current user profile |
 | `GET /api/users/me/config` | Get user configuration |
@@ -184,7 +185,7 @@ system level.
 ## Running Tests
 
 ```bash
-# Backend (180 tests)
+# Backend (196 tests)
 cd backend && ./mvnw test
 
 # Frontend (12 tests)
