@@ -20,7 +20,8 @@ public record PositionResponse(
         Long signalId,
         BigDecimal signalEntryPrice,
         BigDecimal signalStopLoss,
-        BigDecimal signalTarget
+        BigDecimal signalTarget,
+        BigDecimal breakevenSl
 ) {
     public static PositionResponse from(Position pos) {
         var signal = pos.getSignal();
@@ -38,7 +39,8 @@ public record PositionResponse(
                 signal != null ? signal.getId() : null,
                 signal != null ? signal.getEntryPrice() : null,
                 signal != null ? signal.getStopLoss() : null,
-                signal != null ? signal.getTarget() : null
+                signal != null ? signal.getTarget() : null,
+                pos.getBreakevenSl()
         );
     }
 }

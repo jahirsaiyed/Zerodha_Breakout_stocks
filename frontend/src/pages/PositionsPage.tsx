@@ -101,7 +101,16 @@ export function PositionsPage() {
                         </td>
                       </>
                     )}
-                    <td className="px-5 py-3.5 text-gray-600">{pos.signalStopLoss?.toFixed(2) ?? '—'}</td>
+                    <td className="px-5 py-3.5">
+                      {pos.breakevenSl != null ? (
+                        <span className="inline-flex flex-col gap-0.5">
+                          <span className="font-medium text-amber-600">{pos.breakevenSl.toFixed(2)}</span>
+                          <span className="text-xs text-amber-500">breakeven</span>
+                        </span>
+                      ) : (
+                        <span className="text-gray-600">{pos.signalStopLoss?.toFixed(2) ?? '—'}</span>
+                      )}
+                    </td>
                     <td className="px-5 py-3.5 text-gray-600">{pos.signalTarget?.toFixed(2) ?? '—'}</td>
                     {tab === 'ACTIVE' && (
                       <td className="px-5 py-3.5">
