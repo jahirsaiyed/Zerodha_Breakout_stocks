@@ -54,6 +54,34 @@ public class PortfolioController {
     }
 
     /**
+     * POST /api/portfolio/positions/{id}/cancel
+     * Cancels the entry order for a PENDING_ENTRY position owned by the caller.
+     */
+    @PostMapping("/positions/{id}/cancel")
+    public ResponseEntity<PositionResponse> cancelPending(
+            @PathVariable Long id,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+
+        List<Position> pending = db.getPositionsByStatus(userId, PositionStatus.PENDING_ENTRY);
+        pending.stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Pending position not found or not owned by caller: " + id));
+
+        engine.cancelPendingPosition(id);
+
+        Position updated = db.getAllPositionsForUser(userId).stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElseThrow();
+
+        return ResponseEntity.ok(PositionResponse.from(updated));
+    }
+
+    /**
      * POST /api/portfolio/positions/{id}/exit
      * Triggers a manual exit for the given position (must be ACTIVE and owned by caller).
      */
