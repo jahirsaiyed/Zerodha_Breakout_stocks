@@ -433,6 +433,35 @@ public class PortfolioEngine {
         }
     }
 
+    // ── Manual cancel (pending) ───────────────────────────────────────────────
+
+    public void cancelPendingPosition(Long positionId) {
+        Position pos = db.getPendingEntryPositions().stream()
+                .filter(p -> p.getId().equals(positionId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Pending position not found: " + positionId));
+
+        UserConfig config = db.getUserConfigByUserId(pos.getUser().getId())
+                .orElseThrow(() -> new IllegalStateException("No config for user " + pos.getUser().getId()));
+
+        log.info("[CANCEL] START pos={} symbol={} user={}", positionId, pos.getSymbol(), pos.getUser().getId());
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        String orderId = pos.getEntryOrderId();
+        if (orderId != null) {
+            try {
+                broker.cancelOrder(orderId);
+                log.info("[CANCEL] entry order cancelled pos={} order={}", positionId, orderId);
+            } catch (Exception e) {
+                log.warn("[CANCEL] could not cancel entry order {} for pos={}: {}", orderId, positionId, e.getMessage());
+            }
+        }
+
+        db.markPositionCancelled(positionId);
+        events.publishEvent(new OrderCancelledEvent(positionId, pos.getSymbol(), orderId, "manual_cancel"));
+        log.info("[CANCEL] DONE pos={} symbol={}", positionId, pos.getSymbol());
+    }
+
     // ── Manual exit ───────────────────────────────────────────────────────────
 
     public void manualExit(Long positionId) {

@@ -10,6 +10,7 @@ export function PositionsPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('ACTIVE')
   const [exiting, setExiting] = useState<number | null>(null)
+  const [cancelling, setCancelling] = useState<number | null>(null)
 
   const { data: positions = [], isLoading } = useQuery<Position[]>({
     queryKey: ['positions'],
@@ -31,6 +32,14 @@ export function PositionsPage() {
       qc.invalidateQueries({ queryKey: ['positions'] })
       qc.invalidateQueries({ queryKey: ['positions-live'] })
       setExiting(null)
+    },
+  })
+
+  const cancel = useMutation({
+    mutationFn: (id: number) => api.post(`/portfolio/positions/${id}/cancel`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      setCancelling(null)
     },
   })
 
@@ -126,7 +135,7 @@ export function PositionsPage() {
                       {pos.status === 'ACTIVE' && (
                         exiting === pos.id ? (
                           <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500">Confirm exit?</span>
+                            <span className="text-xs text-gray-500">Confirm close?</span>
                             <button onClick={() => exit.mutate(pos.id)}
                               className="rounded-md bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
                               Yes
@@ -140,7 +149,28 @@ export function PositionsPage() {
                           <button onClick={() => setExiting(pos.id)}
                             className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
                                        transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-                            Exit
+                            Close
+                          </button>
+                        )
+                      )}
+                      {pos.status === 'PENDING_ENTRY' && (
+                        cancelling === pos.id ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs text-gray-500">Confirm cancel?</span>
+                            <button onClick={() => cancel.mutate(pos.id)}
+                              className="rounded-md bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
+                              Yes
+                            </button>
+                            <button onClick={() => setCancelling(null)}
+                              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs hover:bg-gray-50">
+                              No
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setCancelling(pos.id)}
+                            className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
+                                       transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+                            Cancel
                           </button>
                         )
                       )}
