@@ -440,7 +440,7 @@ export function SettingsPage() {
           </Field>
 
           <Field label="Max Margin (₹)" hint="Optional fixed cap in ₹. Leave blank to rely on the percentage limit only.">
-            <input type="number" min={1000} step={1000} value={form.marginUsageFixedLimit}
+            <input type="number" step={1000} value={form.marginUsageFixedLimit}
               onChange={set('marginUsageFixedLimit')} placeholder="e.g. 50000"
               className={inputCls} />
           </Field>
