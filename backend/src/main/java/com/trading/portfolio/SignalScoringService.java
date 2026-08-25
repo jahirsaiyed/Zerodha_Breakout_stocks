@@ -1,5 +1,6 @@
 package com.trading.portfolio;
 
+import com.trading.market.GoogleFinancePriceService;
 import com.trading.signals.Signal;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -10,6 +11,7 @@ import java.math.MathContext;
 import java.math.RoundingMode;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -19,10 +21,17 @@ import java.util.Map;
  *   score = (proximityWeight × proximity_score) + (riskRewardWeight × risk_reward_score)
  *
  *   proximity_score = 1 - ((ltp - entry) / (entry - sl))  [capped at 1.0]
- *   Disqualified if ltp ≤ stop_loss.
+ *   Disqualified if ltp ≤ stop_loss or if no price can be resolved.
  *
  *   risk_reward_score = min-max normalised RRR across valid candidates
  * </pre>
+ *
+ * <p>Quote resolution order:
+ * <ol>
+ *   <li>Broker quotes supplied by the caller (Zerodha live feed)</li>
+ *   <li>Google Finance fallback for any symbols still missing after step 1</li>
+ *   <li>Signals whose price cannot be resolved by either source are skipped</li>
+ * </ol>
  */
 @Slf4j
 @Service
@@ -32,19 +41,19 @@ public class SignalScoringService {
     private static final MathContext MC = new MathContext(10, RoundingMode.HALF_UP);
 
     private final ScoringProperties props;
+    private final GoogleFinancePriceService googleFinancePriceService;
 
     public List<ScoredSignal> rank(List<Signal> candidates, Map<String, BigDecimal> quotes) {
+        Map<String, BigDecimal> workingQuotes = resolveQuotes(candidates, quotes);
+
         // Step 1: filter invalid and compute proximity
         record Candidate(Signal signal, BigDecimal ltp, BigDecimal proximity) {}
         List<Candidate> valid = new ArrayList<>();
 
         for (Signal signal : candidates) {
-            BigDecimal ltp = quotes.get(signal.getSymbol());
+            BigDecimal ltp = workingQuotes.get(signal.getSymbol());
             if (ltp == null) {
-                // No live quote available (e.g. free Kite Connect plan) — assume price is at
-                // entry and assign maximum proximity so ranking falls back to RRR alone.
-                log.debug("No quote for {} — using proximity=1.0 (RRR-only ranking)", signal.getSymbol());
-                valid.add(new Candidate(signal, signal.getEntryPrice(), BigDecimal.ONE));
+                log.debug("No quote for {} from broker or Google Finance — skipping", signal.getSymbol());
                 continue;
             }
             // Disqualify: price already at or below stop-loss
@@ -97,5 +106,27 @@ public class SignalScoringService {
 
         Collections.sort(scored); // descending by score
         return scored;
+    }
+
+    /**
+     * Builds a working quotes map by supplementing the broker-supplied {@code quotes} with
+     * Google Finance prices for any symbols that are still missing.
+     */
+    private Map<String, BigDecimal> resolveQuotes(List<Signal> candidates, Map<String, BigDecimal> quotes) {
+        List<String> missing = candidates.stream()
+                .map(Signal::getSymbol)
+                .filter(s -> !quotes.containsKey(s))
+                .distinct()
+                .toList();
+
+        if (missing.isEmpty()) return quotes;
+
+        log.debug("Fetching {} missing quote(s) from Google Finance: {}", missing.size(), missing);
+        Map<String, BigDecimal> gfPrices = googleFinancePriceService.getPrices(missing);
+        log.debug("Google Finance resolved {}/{} missing quote(s)", gfPrices.size(), missing.size());
+
+        Map<String, BigDecimal> merged = new HashMap<>(quotes);
+        merged.putAll(gfPrices);
+        return merged;
     }
 }
