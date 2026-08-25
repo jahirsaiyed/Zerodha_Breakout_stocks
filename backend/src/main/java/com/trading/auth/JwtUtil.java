@@ -14,6 +14,7 @@ import java.util.Date;
 public class JwtUtil {
     private final SecretKey key;
     private static final long EXPIRY_MS = 24L * 60 * 60 * 1000;
+    private static final long ACCESS_TOKEN_EXPIRY_MS = 15L * 60 * 1000; // 15 min
 
     public JwtUtil(@Value("${jwt.secret}") String secret) {
         if (secret.length() < 64) {
@@ -28,6 +29,16 @@ public class JwtUtil {
                 .claim("role", role)
                 .issuedAt(new Date())
                 .expiration(new Date(System.currentTimeMillis() + EXPIRY_MS))
+                .signWith(key)
+                .compact();
+    }
+
+    public String generateAccessToken(String email, String role) {
+        return Jwts.builder()
+                .subject(email)
+                .claim("role", role)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + ACCESS_TOKEN_EXPIRY_MS))
                 .signWith(key)
                 .compact();
     }
