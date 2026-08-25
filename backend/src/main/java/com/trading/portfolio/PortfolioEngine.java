@@ -1,6 +1,7 @@
 package com.trading.portfolio;
 
 import com.trading.broker.*;
+import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.events.*;
 import com.trading.signals.*;
 import com.trading.users.UserConfig;
@@ -135,21 +136,21 @@ public class PortfolioEngine {
         log.info("[TRADE] DONE user={} placed={}/{} slot(s)", userId, placed, slots);
     }
 
-    private void placeEntryOrder(UserConfig config, BrokerAdapter broker,
+    private Long placeEntryOrder(UserConfig config, BrokerAdapter broker,
                                  Signal signal, BigDecimal margin) {
         Long userId = config.getUser().getId();
 
         // Pre-flight duplicate guard (layer 2 of 3 — DB constraint is layer 1)
         if (db.hasActivePosition(userId, signal.getId())) {
             log.warn("Pre-flight: duplicate position for user {} signal {} — skipping", userId, signal.getId());
-            return;
+            return null;
         }
 
         int qty = sizingService.calculate(config, signal.getEntryPrice(), signal.getStopLoss(), margin);
         if (qty <= 0) {
             log.warn("[TRADE] user={} signal={} symbol={} entry={} — insufficient capital, skipping",
                     userId, signal.getId(), signal.getSymbol(), signal.getEntryPrice());
-            return;
+            return null;
         }
 
         log.info("[TRADE] placing order: user={} signal={} symbol={} qty={} entry={}",
@@ -163,6 +164,7 @@ public class PortfolioEngine {
             events.publishEvent(new OrderPlacedEvent(positionId, signal.getSymbol(), orderId));
             log.info("[TRADE] order placed: pos={} orderId={} symbol={} qty={} price={}",
                     positionId, orderId, signal.getSymbol(), qty, signal.getEntryPrice());
+            return positionId;
         } catch (BrokerException e) {
             // Any broker failure (order rejection OR network error) must roll back the pending position.
             // Without this, a failed placeLimitOrder leaves a stranded PENDING_ENTRY row in the DB.
@@ -170,6 +172,114 @@ public class PortfolioEngine {
             log.error("[TRADE] order placement failed for pos={} signal={}: {}", positionId, signal.getId(), e.getMessage());
             throw e;
         }
+    }
+
+    // ── Manual order placement (user-initiated from signals screen) ───────────
+
+    /**
+     * Returns a preview of the order that would be placed for the given signal,
+     * including estimated quantity, cost, and any blocking reason if canPlace=false.
+     */
+    public OrderPreviewResponse previewOrderForSignal(UserConfig config, Long signalId) {
+        Long userId = config.getUser().getId();
+
+        Signal signal = db.getSignalById(signalId)
+                .orElseThrow(() -> new IllegalArgumentException("Signal not found: " + signalId));
+
+        if (signal.getStatus() != SignalStatus.ACTIVE) {
+            return blocked(signal, 0, null, "Signal is no longer active");
+        }
+        if (Boolean.TRUE.equals(config.getTradingPaused())) {
+            return blocked(signal, 0, null, "Trading is paused — enable it in Settings");
+        }
+        if (db.hasActivePosition(userId, signalId)) {
+            return blocked(signal, 0, null, "You already have an open position for this signal");
+        }
+        if (db.getOccupiedSymbols(userId).contains(signal.getSymbol())) {
+            return blocked(signal, 0, null, "You already hold " + signal.getSymbol());
+        }
+
+        long occupied = db.countActivePositions(userId);
+        int slots = config.getMaxPositions() - (int) occupied;
+        if (slots <= 0) {
+            return blocked(signal, 0, null, "No free slots (max " + config.getMaxPositions() + " positions)");
+        }
+
+        if (!Boolean.TRUE.equals(config.getZerodhaConnected())) {
+            return blocked(signal, slots, null, "Zerodha account not connected");
+        }
+
+        BigDecimal margin;
+        try {
+            BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+            margin = broker.getAvailableMargin();
+        } catch (BrokerTokenException e) {
+            return blocked(signal, slots, null, "Zerodha session expired — please reconnect");
+        } catch (BrokerNetworkException e) {
+            return blocked(signal, slots, null, "Could not fetch available margin: " + e.getMessage());
+        }
+
+        int qty = sizingService.calculate(config, signal.getEntryPrice(), signal.getStopLoss(), margin);
+        if (qty <= 0) {
+            return blocked(signal, slots, margin,
+                    "Insufficient margin to buy even 1 share at ₹" + signal.getEntryPrice().toPlainString());
+        }
+
+        BigDecimal cost = signal.getEntryPrice().multiply(BigDecimal.valueOf(qty));
+        return new OrderPreviewResponse(
+                signal.getId(), signal.getSymbol(),
+                signal.getEntryPrice(), signal.getStopLoss(), signal.getTarget(), signal.getRiskRewardRatio(),
+                qty, cost, slots, margin, true, null);
+    }
+
+    /**
+     * Places a limit entry order for the given signal on behalf of the user.
+     * Returns the newly created position ID.
+     */
+    public Long placeOrderForSignal(UserConfig config, Long signalId) {
+        Long userId = config.getUser().getId();
+
+        if (Boolean.TRUE.equals(config.getTradingPaused())) {
+            throw new IllegalStateException("Trading is paused — enable it in Settings");
+        }
+
+        Signal signal = db.getSignalById(signalId)
+                .orElseThrow(() -> new IllegalArgumentException("Signal not found: " + signalId));
+        if (signal.getStatus() != SignalStatus.ACTIVE) {
+            throw new IllegalArgumentException("Signal is not active");
+        }
+        if (db.hasActivePosition(userId, signalId)) {
+            throw new IllegalStateException("You already have an open position for this signal");
+        }
+        if (db.getOccupiedSymbols(userId).contains(signal.getSymbol())) {
+            throw new IllegalStateException("You already hold " + signal.getSymbol());
+        }
+
+        long occupied = db.countActivePositions(userId);
+        if (occupied >= config.getMaxPositions()) {
+            throw new IllegalStateException("No free position slots (max " + config.getMaxPositions() + ")");
+        }
+
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+        BigDecimal margin;
+        try {
+            margin = broker.getAvailableMargin();
+        } catch (BrokerNetworkException e) {
+            throw new IllegalStateException("Could not fetch available margin: " + e.getMessage());
+        }
+
+        Long positionId = placeEntryOrder(config, broker, signal, margin);
+        if (positionId == null) {
+            throw new IllegalStateException("Order was not placed — insufficient margin or duplicate position");
+        }
+        return positionId;
+    }
+
+    private OrderPreviewResponse blocked(Signal signal, int slots, BigDecimal margin, String reason) {
+        return new OrderPreviewResponse(
+                signal.getId(), signal.getSymbol(),
+                signal.getEntryPrice(), signal.getStopLoss(), signal.getTarget(), signal.getRiskRewardRatio(),
+                0, BigDecimal.ZERO, slots, margin, false, reason);
     }
 
     // ── Fill detection ────────────────────────────────────────────────────────

@@ -4,6 +4,7 @@ import com.trading.broker.BrokerAdapter;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
 import com.trading.portfolio.dto.LivePositionResponse;
+import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.dto.OrderResponse;
 import com.trading.portfolio.dto.PositionResponse;
 import com.trading.signals.Order;
@@ -148,6 +149,40 @@ public class PortfolioController {
                 .stream()
                 .map(OrderResponse::from)
                 .toList();
+    }
+
+    /**
+     * GET /api/portfolio/signals/{signalId}/order-preview
+     * Returns an estimated order preview (qty, cost, blocking reason) without placing anything.
+     */
+    @GetMapping("/signals/{signalId}/order-preview")
+    public ResponseEntity<OrderPreviewResponse> orderPreview(
+            @PathVariable Long signalId,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+        UserConfig config = db.getUserConfigByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("User config not found"));
+        return ResponseEntity.ok(engine.previewOrderForSignal(config, signalId));
+    }
+
+    /**
+     * POST /api/portfolio/signals/{signalId}/place-order
+     * Immediately places a limit entry order for the given signal on behalf of the caller.
+     */
+    @PostMapping("/signals/{signalId}/place-order")
+    public ResponseEntity<PositionResponse> placeOrder(
+            @PathVariable Long signalId,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+        UserConfig config = db.getUserConfigByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("User config not found"));
+
+        Long positionId = engine.placeOrderForSignal(config, signalId);
+        Position pos = db.getPositionById(positionId)
+                .orElseThrow(() -> new IllegalStateException("Position not found after creation"));
+        return ResponseEntity.ok(PositionResponse.from(pos));
     }
 
     private Map<String, BigDecimal> fetchQuotes(Long userId, List<Position> positions) {

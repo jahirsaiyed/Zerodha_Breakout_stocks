@@ -211,4 +211,14 @@ public class PortfolioDbService {
                 .orElseThrow(() -> new IllegalStateException("User not found: " + email))
                 .getId();
     }
+
+    @Transactional(readOnly = true)
+    public Optional<Signal> getSignalById(Long signalId) {
+        return signalRepository.findById(signalId);
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<Position> getPositionById(Long positionId) {
+        return positionRepository.findById(positionId);
+    }
 }
