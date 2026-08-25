@@ -14,5 +14,7 @@ public record UserConfigResponse(
     String botName,
     String botUsername,
     BigDecimal marginUsagePercent,
-    BigDecimal marginUsageFixedLimit
+    BigDecimal marginUsageFixedLimit,
+    Boolean tradingPaused,
+    Boolean syncPaused
 ) {}

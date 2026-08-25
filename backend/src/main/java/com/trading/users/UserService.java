@@ -82,6 +82,8 @@ public class UserService {
         if (req.marginUsagePercent() != null) cfg.setMarginUsagePercent(req.marginUsagePercent());
         // marginUsageFixedLimit is always applied — null explicitly clears the cap
         cfg.setMarginUsageFixedLimit(req.marginUsageFixedLimit());
+        if (req.tradingPaused() != null) cfg.setTradingPaused(req.tradingPaused());
+        if (req.syncPaused()    != null) cfg.setSyncPaused(req.syncPaused());
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
@@ -140,7 +142,9 @@ public class UserService {
                 cfg.getTelegramBotName(),
                 cfg.getTelegramBotUsername(),
                 cfg.getMarginUsagePercent(),
-                cfg.getMarginUsageFixedLimit());
+                cfg.getMarginUsageFixedLimit(),
+                cfg.getTradingPaused(),
+                cfg.getSyncPaused());
     }
 
     private BotIdentity fetchBotIdentity(String rawToken) {

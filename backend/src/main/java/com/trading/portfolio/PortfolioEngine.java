@@ -59,6 +59,12 @@ public class PortfolioEngine {
 
     private void runCoreLoopForUser(UserConfig config) {
         Long userId = config.getUser().getId();
+
+        if (Boolean.TRUE.equals(config.getTradingPaused())) {
+            log.info("[TRADE] user={} skipped — trading paused", userId);
+            return;
+        }
+
         BrokerAdapter broker = brokerAdapterFactory.forUser(config);
 
         long occupied = db.countActivePositions(userId);
@@ -77,6 +83,11 @@ public class PortfolioEngine {
         } catch (BrokerNetworkException e) {
             log.warn("Core loop — could not fetch Zerodha holdings for user {}: {}, proceeding with DB symbols only",
                     userId, e.getMessage());
+        }
+
+        if (Boolean.TRUE.equals(config.getSyncPaused())) {
+            log.info("[TRADE] user={} skipped — signal sync paused", userId);
+            return;
         }
 
         List<Signal> candidates = db.getCandidateSignals(userId, occupiedSymbols);

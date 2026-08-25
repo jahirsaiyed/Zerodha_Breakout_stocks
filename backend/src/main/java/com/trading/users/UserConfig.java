@@ -44,6 +44,12 @@ public class UserConfig {
     @Column(name = "telegram_bot_username") private String telegramBotUsername;
     @Column(name = "telegram_bot_name") private String telegramBotName;
     @Builder.Default
+    @Column(name = "trading_paused", nullable = false) private Boolean tradingPaused = false;
+
+    @Builder.Default
+    @Column(name = "sync_paused", nullable = false) private Boolean syncPaused = false;
+
+    @Builder.Default
     @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
 
     @UpdateTimestamp
