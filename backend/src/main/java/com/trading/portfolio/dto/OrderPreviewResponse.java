@@ -14,5 +14,6 @@ public record OrderPreviewResponse(
         Integer availableSlots,
         BigDecimal availableMargin,
         boolean canPlace,
-        String reason
+        String reason,
+        String warning
 ) {}

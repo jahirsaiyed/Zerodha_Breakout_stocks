@@ -209,14 +209,28 @@ public class PortfolioEngine {
             return blocked(signal, slots, null, "Zerodha account not connected");
         }
 
+        BrokerAdapter broker;
         BigDecimal margin;
         try {
-            BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+            broker = brokerAdapterFactory.forUser(config);
             margin = broker.getAvailableMargin();
         } catch (BrokerTokenException e) {
             return blocked(signal, slots, null, "Zerodha session expired — please reconnect");
         } catch (BrokerNetworkException e) {
             return blocked(signal, slots, null, "Could not fetch available margin: " + e.getMessage());
+        }
+
+        String warning = null;
+        try {
+            BigDecimal ltp = broker.getQuotes(List.of(signal.getSymbol())).get(signal.getSymbol());
+            if (ltp != null && ltp.compareTo(signal.getEntryPrice()) > 0) {
+                warning = "Current price ₹" + ltp.toPlainString() + " is above entry ₹"
+                        + signal.getEntryPrice().toPlainString()
+                        + ". A limit order at ₹" + signal.getEntryPrice().toPlainString()
+                        + " will only fill if price drops back to the entry level.";
+            }
+        } catch (BrokerNetworkException e) {
+            log.warn("[PREVIEW] could not fetch LTP for {} to validate entry: {}", signal.getSymbol(), e.getMessage());
         }
 
         int qty = sizingService.calculate(config, signal.getEntryPrice(), signal.getStopLoss(), margin);
@@ -229,7 +243,7 @@ public class PortfolioEngine {
         return new OrderPreviewResponse(
                 signal.getId(), signal.getSymbol(),
                 signal.getEntryPrice(), signal.getStopLoss(), signal.getTarget(), signal.getRiskRewardRatio(),
-                qty, cost, slots, margin, true, null);
+                qty, cost, slots, margin, true, null, warning);
     }
 
     /**
@@ -261,6 +275,7 @@ public class PortfolioEngine {
         }
 
         BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
         BigDecimal margin;
         try {
             margin = broker.getAvailableMargin();
@@ -279,7 +294,7 @@ public class PortfolioEngine {
         return new OrderPreviewResponse(
                 signal.getId(), signal.getSymbol(),
                 signal.getEntryPrice(), signal.getStopLoss(), signal.getTarget(), signal.getRiskRewardRatio(),
-                0, BigDecimal.ZERO, slots, margin, false, reason);
+                0, BigDecimal.ZERO, slots, margin, false, reason, null);
     }
 
     // ── Fill detection ────────────────────────────────────────────────────────

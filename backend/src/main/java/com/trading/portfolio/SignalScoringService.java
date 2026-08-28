@@ -64,6 +64,11 @@ public class SignalScoringService {
                 log.debug("Signal {} disqualified: ltp={} ≤ sl={}", signal.getId(), ltp, signal.getStopLoss());
                 continue;
             }
+            // Disqualify: price already above entry — limit order would not fill at entry price
+            if (ltp.compareTo(signal.getEntryPrice()) > 0) {
+                log.debug("Signal {} disqualified: ltp={} > entry={}", signal.getId(), ltp, signal.getEntryPrice());
+                continue;
+            }
 
             BigDecimal risk = signal.getEntryPrice().subtract(signal.getStopLoss(), MC);
             if (risk.compareTo(BigDecimal.ZERO) <= 0) {
