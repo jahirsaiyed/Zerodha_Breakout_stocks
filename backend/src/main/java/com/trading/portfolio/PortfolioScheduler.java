@@ -39,6 +39,17 @@ public class PortfolioScheduler {
         engine.checkOrderFills();
     }
 
+    /**
+     * EOD fill check — runs once at 15:35 IST Mon–Fri.
+     * Catches DAY-validity limit orders that Zerodha auto-cancelled at market close (15:30)
+     * but may not have been detected during the last market-hours fill-check run.
+     */
+    @Scheduled(cron = "0 35 15 * * MON-FRI", zone = "Asia/Kolkata")
+    public void checkOrderFillsEod() {
+        log.debug("Scheduler: checkOrderFillsEod triggered");
+        engine.checkOrderFills();
+    }
+
     /** Reconcile GTT exits — every 30 min, 09:00–16:00 IST, Mon–Fri */
     @Scheduled(cron = "0 0/30 9-16 * * MON-FRI", zone = "Asia/Kolkata")
     public void reconcileGttExits() {

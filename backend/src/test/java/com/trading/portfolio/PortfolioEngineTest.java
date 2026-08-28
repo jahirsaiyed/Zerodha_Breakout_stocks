@@ -151,6 +151,23 @@ class PortfolioEngineTest {
     }
 
     @Test
+    @DisplayName("checkOrderFills cancels position when Zerodha auto-cancelled order at EOD")
+    void checkOrderFills_cancelledOrder_cancelsPosition() {
+        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
+        BrokerOrderDetail detail = new BrokerOrderDetail(BrokerOrderStatus.CANCELLED, 0, null);
+
+        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getOrderDetail("ORD123")).thenReturn(detail);
+
+        engine.checkOrderFills();
+
+        verify(db).markPositionCancelled(10L);
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderCancelledEvent.class));
+    }
+
+    @Test
     @DisplayName("checkOrderFills returns early when no pending positions")
     void checkOrderFills_noPendingPositions_returnsEarly() {
         when(db.getPendingEntryPositions()).thenReturn(List.of());
