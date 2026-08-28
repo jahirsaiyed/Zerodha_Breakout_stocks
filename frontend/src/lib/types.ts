@@ -114,6 +114,7 @@ export interface OrderPreview {
   availableMargin: number | null
   canPlace: boolean
   reason: string | null
+  warning: string | null
 }
 
 export interface TelegramChat {
