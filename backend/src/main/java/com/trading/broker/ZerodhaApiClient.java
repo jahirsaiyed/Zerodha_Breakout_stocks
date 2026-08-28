@@ -171,14 +171,20 @@ public class ZerodhaApiClient {
         return executeWithRetry(() -> {
             JsonNode data = get("/orders/" + orderId);
             if (data.isArray()) {
+                // Kite Connect returns order history oldest-first; iterate to the last
+                // matching entry so we always read the most recent status (e.g. CANCELLED).
+                JsonNode latest = null;
                 for (JsonNode order : data) {
                     if (orderId.equals(order.path("order_id").asText())) {
-                        BrokerOrderStatus status = mapOrderStatus(order.path("status").asText());
-                        int filled = order.path("filled_quantity").asInt(0);
-                        BigDecimal avgPrice = new BigDecimal(
-                                order.path("average_price").asText("0"));
-                        return new BrokerOrderDetail(status, filled, avgPrice);
+                        latest = order;
                     }
+                }
+                if (latest != null) {
+                    BrokerOrderStatus status = mapOrderStatus(latest.path("status").asText());
+                    int filled = latest.path("filled_quantity").asInt(0);
+                    BigDecimal avgPrice = new BigDecimal(
+                            latest.path("average_price").asText("0"));
+                    return new BrokerOrderDetail(status, filled, avgPrice);
                 }
             }
             return new BrokerOrderDetail(BrokerOrderStatus.UNKNOWN, 0, BigDecimal.ZERO);
@@ -395,7 +401,8 @@ public class ZerodhaApiClient {
             case "OPEN", "TRIGGER PENDING", "OPEN PENDING",
                  "VALIDATION PENDING", "PUT ORDER REQ RECEIVED",
                  "MODIFY VALIDATION PENDING", "MODIFY PENDING",
-                 "AFTER MARKET ORDER REQ RECEIVED"
+                 "AFTER MARKET ORDER REQ RECEIVED",
+                 "CANCEL PENDING"
                               -> BrokerOrderStatus.PENDING;
             default          -> BrokerOrderStatus.UNKNOWN;
         };
