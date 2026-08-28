@@ -66,8 +66,9 @@ class SignalScoringServiceTest {
     @Test
     @DisplayName("no broker quote but Google Finance resolves price — signal scored with that LTP")
     void rank_noQuote_googleFinanceReturnsPrice_signalScored() {
+        // ltp=2350 is below entry=2400 → passes the new entry-price guard
         when(googleFinancePriceService.getPrices(anyList()))
-                .thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2450)));
+                .thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2350)));
         Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
         var result = scoringService.rank(List.of(s), Map.of());
         assertThat(result).hasSize(1);
@@ -98,8 +99,8 @@ class SignalScoringServiceTest {
     @DisplayName("single valid signal is scored and returned")
     void rank_singleValidSignal_returnsSingleResult() {
         Signal s = signal(1, "RELIANCE", 2400, 2300, 2600);
-        // ltp = 2450 (above entry → price pulled back toward entry, good)
-        Map<String, BigDecimal> quotes = Map.of("RELIANCE", BigDecimal.valueOf(2450));
+        // ltp=2380: below entry=2400 and above sl=2300 — valid candidate
+        Map<String, BigDecimal> quotes = Map.of("RELIANCE", BigDecimal.valueOf(2380));
         var result = scoringService.rank(List.of(s), quotes);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).signal().getSymbol()).isEqualTo("RELIANCE");
@@ -107,20 +108,21 @@ class SignalScoringServiceTest {
     }
 
     @Test
-    @DisplayName("higher proximity signal is ranked first")
-    void rank_higherProximity_rankedFirst() {
-        // Signal A: entry=100, sl=90, target=120; ltp=101 (very close to entry → high proximity)
-        Signal a = signal(1, "AAA", 100, 90, 120);
-        // Signal B: entry=100, sl=90, target=120; ltp=110 (far above entry → low proximity)
-        Signal b = signal(2, "BBB", 100, 90, 120);
+    @DisplayName("with ltp at or below entry (proximity=1.0 for all), higher RRR signal is ranked first")
+    void rank_higherRrr_rankedFirstWhenProximityEqual() {
+        // Both signals have ltp at entry → proximity capped at 1.0 for both
+        // AAA has higher RRR (target=130 → RRR=3) vs BBB (target=120 → RRR=2)
+        Signal a = signal(1, "AAA", 100, 90, 130); // RRR=3
+        Signal b = signal(2, "BBB", 100, 90, 120); // RRR=2
 
         Map<String, BigDecimal> quotes = Map.of(
-                "AAA", BigDecimal.valueOf(101),
-                "BBB", BigDecimal.valueOf(110)
+                "AAA", BigDecimal.valueOf(100), // ltp == entry → proximity=1.0
+                "BBB", BigDecimal.valueOf(100)  // ltp == entry → proximity=1.0
         );
         var result = scoringService.rank(List.of(a, b), quotes);
 
         assertThat(result).hasSize(2);
+        // Higher RRR (AAA) ranks first when proximity is equal
         assertThat(result.get(0).signal().getSymbol()).isEqualTo("AAA");
     }
 
@@ -171,5 +173,70 @@ class SignalScoringServiceTest {
                 .isGreaterThanOrEqualTo(result.get(1).score());
         // Higher RRR (AAA) should rank first
         assertThat(result.get(0).signal().getSymbol()).isEqualTo("AAA");
+    }
+
+    // ── New guard: LTP above entry ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("signal disqualified when LTP is strictly above entry price")
+    void rank_ltpAboveEntry_disqualified() {
+        // entry=168, sl=160, ltp=174 — the exact scenario from the bug report
+        Signal s = signal(1, "EXAMPLE", 168, 160, 185);
+        Map<String, BigDecimal> quotes = Map.of("EXAMPLE", BigDecimal.valueOf(174));
+        var result = scoringService.rank(List.of(s), quotes);
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("signal disqualified when LTP is just one rupee above entry")
+    void rank_ltpOneAboveEntry_disqualified() {
+        Signal s = signal(1, "XYZ", 100, 90, 120);
+        Map<String, BigDecimal> quotes = Map.of("XYZ", BigDecimal.valueOf(101));
+        // LTP=101 > entry=100 → must be disqualified
+        var result = scoringService.rank(List.of(s), quotes);
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    @DisplayName("signal included when LTP equals entry price (boundary)")
+    void rank_ltpExactlyAtEntry_included() {
+        Signal s = signal(1, "XYZ", 100, 90, 120);
+        Map<String, BigDecimal> quotes = Map.of("XYZ", BigDecimal.valueOf(100));
+        // LTP == entry → at entry, limit order would fill — must include with proximity=1.0
+        var result = scoringService.rank(List.of(s), quotes);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).score()).isPositive();
+    }
+
+    @Test
+    @DisplayName("signal included when LTP is below entry price (pullback scenario)")
+    void rank_ltpBelowEntry_included() {
+        Signal s = signal(1, "XYZ", 100, 90, 120);
+        Map<String, BigDecimal> quotes = Map.of("XYZ", BigDecimal.valueOf(97));
+        // LTP < entry → price pulled back below entry → best case, proximity capped at 1.0
+        var result = scoringService.rank(List.of(s), quotes);
+        assertThat(result).hasSize(1);
+    }
+
+    @Test
+    @DisplayName("only signals at or below entry are ranked; above-entry signals filtered out")
+    void rank_mixedLtps_onlyAtOrBelowEntryRanked() {
+        // AAA: ltp=95 < entry=100 → included
+        Signal a = signal(1, "AAA", 100, 90, 120);
+        // BBB: ltp=100 == entry=100 → included
+        Signal b = signal(2, "BBB", 100, 90, 120);
+        // CCC: ltp=105 > entry=100 → disqualified
+        Signal c = signal(3, "CCC", 100, 90, 120);
+
+        Map<String, BigDecimal> quotes = Map.of(
+                "AAA", BigDecimal.valueOf(95),
+                "BBB", BigDecimal.valueOf(100),
+                "CCC", BigDecimal.valueOf(105)
+        );
+        var result = scoringService.rank(List.of(a, b, c), quotes);
+        assertThat(result).hasSize(2);
+        assertThat(result.stream().map(ss -> ss.signal().getSymbol()).toList())
+                .containsExactlyInAnyOrder("AAA", "BBB")
+                .doesNotContain("CCC");
     }
 }

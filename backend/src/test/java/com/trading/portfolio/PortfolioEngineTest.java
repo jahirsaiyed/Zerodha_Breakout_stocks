@@ -1,6 +1,7 @@
 package com.trading.portfolio;
 
 import com.trading.broker.*;
+import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.signals.*;
 import com.trading.signals.StopLossBasis;
 import com.trading.users.PositionSizingMethod;
@@ -381,6 +382,451 @@ class PortfolioEngineTest {
         // Should sell because LTP < breakevenSl, even though LTP > signal.stopLoss
         verify(broker).placeMarketSellOrder(eq("RELIANCE"), eq(4), anyString());
         verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_SL), any());
+    }
+
+    // ── previewOrderForSignal ─────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("previewOrder throws when signal not found")
+    void previewOrder_signalNotFound_throws() {
+        when(db.getSignalById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> engine.previewOrderForSignal(userConfig, 99L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("99");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when signal is not ACTIVE")
+    void previewOrder_signalNotActive_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        signal.setStatus(SignalStatus.CANCELLED);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(userConfig, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("active");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when trading is paused")
+    void previewOrder_tradingPaused_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        UserConfig paused = UserConfig.builder()
+                .user(user).maxPositions(5)
+                .positionSizingMethod(PositionSizingMethod.FIXED)
+                .positionSizingValue(BigDecimal.valueOf(10_000))
+                .orderExpiryDays(5)
+                .tradingPaused(true)
+                .build();
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(paused, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("paused");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when user already has a position for this signal")
+    void previewOrder_duplicatePosition_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(true);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(userConfig, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("already");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when symbol is already held")
+    void previewOrder_symbolAlreadyHeld_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of("RELIANCE"));
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(userConfig, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("RELIANCE");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when no free position slots remain")
+    void previewOrder_noFreeSlots_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(5L); // maxPositions = 5
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(userConfig, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("slot");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when Zerodha account not connected")
+    void previewOrder_zerodhaNotConnected_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        // zerodhaConnected defaults to false in userConfig
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(userConfig, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("connected");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when Zerodha session token is expired")
+    void previewOrder_tokenExpired_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenThrow(new BrokerTokenException("expired"));
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("expired");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when margin fetch fails due to network error")
+    void previewOrder_marginFetchNetworkError_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenThrow(new BrokerNetworkException("timeout"));
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("margin");
+    }
+
+    @Test
+    @DisplayName("previewOrder blocks when margin is insufficient for even 1 share")
+    void previewOrder_insufficientMargin_blocksWithReason() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100));
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2390)));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(0);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isFalse();
+        assertThat(preview.reason()).containsIgnoringCase("margin");
+    }
+
+    @Test
+    @DisplayName("previewOrder sets warning when LTP is above entry price but keeps canPlace=true")
+    void previewOrder_ltpAboveEntry_canPlaceTrueWithWarning() {
+        // entry=168, sl=160, ltp=174 — the real-world bug-report scenario
+        Signal signal = buildSignal(1L, "EXAMPLE", 168, 160, 185);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenReturn(Map.of("EXAMPLE", BigDecimal.valueOf(174)));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(5);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.reason()).isNull();
+        assertThat(preview.warning()).isNotNull();
+        assertThat(preview.warning()).contains("174");
+        assertThat(preview.warning()).contains("168");
+    }
+
+    @Test
+    @DisplayName("previewOrder sets no warning when LTP equals entry price (boundary)")
+    void previewOrder_ltpExactlyAtEntry_canPlaceTrueNoWarning() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2400)));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.warning()).isNull();
+    }
+
+    @Test
+    @DisplayName("previewOrder sets no warning when LTP is below entry price")
+    void previewOrder_ltpBelowEntry_canPlaceTrueNoWarning() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2350)));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.warning()).isNull();
+    }
+
+    @Test
+    @DisplayName("previewOrder skips warning gracefully when LTP fetch fails (network error)")
+    void previewOrder_ltpFetchNetworkError_canPlaceTrueNoWarning() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenThrow(new BrokerNetworkException("timeout"));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        // Network failure on LTP fetch must not block the preview
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.warning()).isNull();
+    }
+
+    @Test
+    @DisplayName("previewOrder returns correct quantity and estimated cost on happy path")
+    void previewOrder_happyPath_returnsCorrectQtyAndCost() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(2L); // 3 slots free
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2380)));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.reason()).isNull();
+        assertThat(preview.warning()).isNull();
+        assertThat(preview.estimatedQty()).isEqualTo(4);
+        // cost = entryPrice × qty = 2400 × 4 = 9600
+        assertThat(preview.estimatedCost()).isEqualByComparingTo(BigDecimal.valueOf(9600));
+        assertThat(preview.availableSlots()).isEqualTo(3);
+    }
+
+    // ── placeOrderForSignal ───────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("placeOrder throws when trading is paused")
+    void placeOrder_tradingPaused_throws() {
+        UserConfig paused = UserConfig.builder()
+                .user(user).maxPositions(5)
+                .positionSizingMethod(PositionSizingMethod.FIXED)
+                .positionSizingValue(BigDecimal.valueOf(10_000))
+                .orderExpiryDays(5)
+                .tradingPaused(true)
+                .build();
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(paused, 1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("paused");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when signal not found")
+    void placeOrder_signalNotFound_throws() {
+        when(db.getSignalById(99L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 99L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("99");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when signal is not ACTIVE")
+    void placeOrder_signalNotActive_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        signal.setStatus(SignalStatus.CANCELLED);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("not active");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when user already has position for this signal")
+    void placeOrder_duplicatePosition_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when symbol is already held by user")
+    void placeOrder_symbolAlreadyHeld_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of("RELIANCE"));
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RELIANCE");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when no free position slots remain")
+    void placeOrder_noFreeSlots_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(5L); // maxPositions=5
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("slot");
+    }
+
+    @Test
+    @DisplayName("placeOrder throws when margin is insufficient (qty=0)")
+    void placeOrder_insufficientMargin_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(50));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(0);
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    @DisplayName("placeOrder succeeds: creates position, places limit order, records it, fires event")
+    void placeOrder_brokerOrderSucceeds_returnsPositionId() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+        when(db.createPendingPosition(any(), any(), anyInt())).thenReturn(20L);
+        when(broker.placeLimitOrder(anyString(), anyInt(), any(), anyString())).thenReturn("ORD999");
+
+        Long positionId = engine.placeOrderForSignal(userConfig, 1L);
+
+        assertThat(positionId).isEqualTo(20L);
+        verify(broker).placeLimitOrder(eq("RELIANCE"), eq(4), any(BigDecimal.class), eq("pos_20"));
+        verify(db).recordEntryOrder(20L, userConfig, signal, "ORD999", 4);
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderPlacedEvent.class));
+    }
+
+    @Test
+    @DisplayName("placeOrder rolls back pending position when broker limit order fails")
+    void placeOrder_brokerOrderFails_rollsBackPosition() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+        when(db.createPendingPosition(any(), any(), anyInt())).thenReturn(20L);
+        when(broker.placeLimitOrder(anyString(), anyInt(), any(), anyString()))
+                .thenThrow(new BrokerOrderException("Rejected by exchange"));
+
+        assertThatThrownBy(() -> engine.placeOrderForSignal(userConfig, 1L))
+                .isInstanceOf(BrokerOrderException.class);
+
+        verify(db).cancelPosition(20L);
+        verify(db, never()).recordEntryOrder(any(), any(), any(), any(), anyInt());
+        verify(events, never()).publishEvent(any(com.trading.portfolio.events.OrderPlacedEvent.class));
+    }
+
+    @Test
+    @DisplayName("placeOrder proceeds and places order even when LTP is above entry (user override)")
+    void placeOrder_ltpAboveEntry_orderStillPlaced() {
+        // No LTP guard in placeOrderForSignal — user chose to override the warning
+        Signal signal = buildSignal(1L, "EXAMPLE", 168, 160, 185);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(5);
+        when(db.createPendingPosition(any(), any(), anyInt())).thenReturn(21L);
+        when(broker.placeLimitOrder(anyString(), anyInt(), any(), anyString())).thenReturn("ORD_OVERRIDE");
+
+        Long positionId = engine.placeOrderForSignal(userConfig, 1L);
+
+        // Must proceed — limit order at entry price (168), not at current LTP (174)
+        assertThat(positionId).isEqualTo(21L);
+        verify(broker).placeLimitOrder(eq("EXAMPLE"), eq(5), any(BigDecimal.class), eq("pos_21"));
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderPlacedEvent.class));
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /** UserConfig with Zerodha connected, needed for broker-reaching test paths. */
+    private UserConfig connectedConfig() {
+        return UserConfig.builder()
+                .user(user)
+                .maxPositions(5)
+                .positionSizingMethod(PositionSizingMethod.FIXED)
+                .positionSizingValue(BigDecimal.valueOf(10_000))
+                .orderExpiryDays(5)
+                .zerodhaConnected(true)
+                .build();
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
