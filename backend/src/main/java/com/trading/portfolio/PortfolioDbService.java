@@ -113,7 +113,7 @@ public class PortfolioDbService {
 
     @Transactional(readOnly = true)
     public List<Position> getPendingEntryPositions() {
-        return positionRepository.findByStatus(PositionStatus.PENDING_ENTRY);
+        return positionRepository.findByStatusFetchSignal(PositionStatus.PENDING_ENTRY);
     }
 
     @Transactional(readOnly = true)
