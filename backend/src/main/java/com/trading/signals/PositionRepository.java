@@ -17,6 +17,9 @@ public interface PositionRepository extends JpaRepository<Position, Long> {
     boolean existsByUserIdAndSignalIdAndStatusIn(Long userId, Long signalId, List<PositionStatus> statuses);
     List<Position> findByUserIdAndStatusInAndClosedAtAfter(Long userId, List<PositionStatus> statuses, LocalDateTime after);
 
-    @Query("SELECT p FROM Position p JOIN p.signal s WHERE p.status = 'ACTIVE' AND s.closingBasis = :basis")
+    @Query("SELECT p FROM Position p LEFT JOIN FETCH p.signal WHERE p.status = :status")
+    List<Position> findByStatusFetchSignal(@Param("status") PositionStatus status);
+
+    @Query("SELECT p FROM Position p LEFT JOIN FETCH p.signal s WHERE p.status = 'ACTIVE' AND s.closingBasis = :basis")
     List<Position> findActiveBySignalClosingBasis(@Param("basis") StopLossBasis basis);
 }

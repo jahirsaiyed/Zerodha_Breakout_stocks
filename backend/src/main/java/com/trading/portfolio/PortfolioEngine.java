@@ -313,7 +313,11 @@ public class PortfolioEngine {
                 try {
                     BrokerAdapter broker = brokerAdapterFactory.forUser(config);
                     for (Position pos : entry.getValue()) {
-                        checkFillForPosition(config, broker, pos);
+                        try {
+                            checkFillForPosition(config, broker, pos);
+                        } catch (Exception e) {
+                            log.error("[FILL] pos={} symbol={} error: {}", pos.getId(), pos.getSymbol(), e.getMessage(), e);
+                        }
                     }
                 } catch (BrokerTokenException e) {
                     log.warn("[FILL] user={} skipped — token expired", entry.getKey());
@@ -482,7 +486,11 @@ public class PortfolioEngine {
                             .map(Position::getSymbol).distinct().toList();
                     Map<String, BigDecimal> quotes = fetchQuotesSafe(broker, symbols, entry.getKey(), basis.name());
                     for (Position pos : entry.getValue()) {
-                        checkSlForPosition(pos, broker, quotes, basis);
+                        try {
+                            checkSlForPosition(pos, broker, quotes, basis);
+                        } catch (Exception e) {
+                            log.error("[SL-{}] pos={} symbol={} error: {}", basis, pos.getId(), pos.getSymbol(), e.getMessage(), e);
+                        }
                     }
                 } catch (BrokerTokenException e) {
                     log.warn("[SL-{}] user={} skipped — token expired", basis, entry.getKey());
