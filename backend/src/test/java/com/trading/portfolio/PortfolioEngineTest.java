@@ -179,41 +179,24 @@ class PortfolioEngineTest {
     }
 
     @Test
-    @DisplayName("checkOrderFills reconciles via holdings when order aged out of Zerodha's order book")
-    void checkOrderFills_orderNotFound_presentInHoldings_activatesPosition() {
-        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
-        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
-        pos.setSignal(signal);
-        Holding holding = new Holding("RELIANCE", 4, BigDecimal.valueOf(2410), BigDecimal.valueOf(2450));
-
-        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
-        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
-        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
-        when(broker.getOrderDetail("ORD123")).thenThrow(new BrokerOrderException("Zerodha [GeneralException]: Couldn't find that `order_id`."));
-        when(broker.getHoldings()).thenReturn(List.of(holding));
-        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT456");
-
-        engine.checkOrderFills();
-
-        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456");
-        verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
-    }
-
-    @Test
-    @DisplayName("checkOrderFills cancels position when order not found and absent from holdings")
-    void checkOrderFills_orderNotFound_absentFromHoldings_cancelsPosition() {
+    @DisplayName("checkOrderFills leaves position untouched and alerts when order aged out of Zerodha's order book")
+    void checkOrderFills_orderNotFound_leavesPositionUntouchedAndAlerts() {
         Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
 
         when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
         when(broker.getOrderDetail("ORD123")).thenThrow(new BrokerOrderException("Zerodha [GeneralException]: Couldn't find that `order_id`."));
-        when(broker.getHoldings()).thenReturn(List.of());
 
         engine.checkOrderFills();
 
-        verify(db).markPositionCancelled(10L);
-        verify(events).publishEvent(any(com.trading.portfolio.events.OrderCancelledEvent.class));
+        // Must never guess FILLED/CANCELLED from this alone — a pre-existing manual holding in the
+        // same symbol would look identical, and guessing FILLED would place a live GTT sell order
+        // against shares this position never actually bought.
+        verify(db, never()).activatePosition(anyLong(), anyInt(), any(), any());
+        verify(db, never()).markPositionCancelled(anyLong());
+        verify(broker, never()).placeGttTargetOrder(anyString(), anyInt(), any(), anyString());
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderLookupFailedEvent.class));
     }
 
     // ── reconcileGttExits ────────────────────────────────────────────────────

@@ -93,6 +93,17 @@ public class PortfolioEventListener {
 
     @Async
     @EventListener
+    public void onOrderLookupFailed(OrderLookupFailedEvent event) {
+        String msg = "Action needed: can't verify order status\n"
+                + "Symbol: " + event.symbol() + "\n"
+                + "Order: " + event.zerodhaOrderId() + "\n"
+                + "Zerodha no longer has a record of this order (too old to query). "
+                + "Please check your Zerodha order book / holdings and reconcile manually.";
+        notifications.notifyForPosition(event.positionId(), msg);
+    }
+
+    @Async
+    @EventListener
     public void onUnmanagedPosition(UnmanagedPositionEvent event) {
         String msg = "Alert: unmanaged position detected\n"
                 + "Symbol: " + event.symbol() + "\n"
