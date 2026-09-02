@@ -3,6 +3,7 @@ package com.trading.portfolio;
 import com.trading.broker.BrokerAdapter;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
+import com.trading.portfolio.dto.ConfirmFillRequest;
 import com.trading.portfolio.dto.LivePositionResponse;
 import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.dto.OrderResponse;
@@ -12,6 +13,7 @@ import com.trading.signals.OrderRepository;
 import com.trading.signals.Position;
 import com.trading.signals.PositionStatus;
 import com.trading.users.UserConfig;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -78,6 +80,35 @@ public class PortfolioController {
                 .filter(p -> p.getId().equals(id))
                 .findFirst()
                 .orElseThrow();
+
+        return ResponseEntity.ok(PositionResponse.from(updated));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/confirm-fill
+     * Manually confirms a fill for a PENDING_ENTRY position owned by the caller, whose order
+     * can no longer be verified with Zerodha (e.g. order_id aged past the trading day). The
+     * caller must have independently verified the actual fill on Zerodha first — this never
+     * queries the broker to decide fill status.
+     */
+    @PostMapping("/positions/{id}/confirm-fill")
+    public ResponseEntity<PositionResponse> confirmFill(
+            @PathVariable Long id,
+            @RequestBody @Valid ConfirmFillRequest req,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+
+        List<Position> pending = db.getPositionsByStatus(userId, PositionStatus.PENDING_ENTRY);
+        pending.stream()
+                .filter(p -> p.getId().equals(id))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Pending position not found or not owned by caller: " + id));
+
+        engine.confirmManualFill(id, req.quantity(), req.avgPrice());
+
+        Position updated = db.getPositionById(id).orElseThrow();
 
         return ResponseEntity.ok(PositionResponse.from(updated));
     }

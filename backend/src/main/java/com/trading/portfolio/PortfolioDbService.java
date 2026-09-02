@@ -219,6 +219,6 @@ public class PortfolioDbService {
 
     @Transactional(readOnly = true)
     public Optional<Position> getPositionById(Long positionId) {
-        return positionRepository.findById(positionId);
+        return positionRepository.findByIdFetchSignal(positionId);
     }
 }

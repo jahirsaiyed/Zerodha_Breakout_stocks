@@ -6,6 +6,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 public interface PositionRepository extends JpaRepository<Position, Long> {
     List<Position> findByUserId(Long userId);
@@ -19,6 +20,9 @@ public interface PositionRepository extends JpaRepository<Position, Long> {
 
     @Query("SELECT p FROM Position p LEFT JOIN FETCH p.signal WHERE p.status = :status")
     List<Position> findByStatusFetchSignal(@Param("status") PositionStatus status);
+
+    @Query("SELECT p FROM Position p LEFT JOIN FETCH p.signal WHERE p.id = :id")
+    Optional<Position> findByIdFetchSignal(@Param("id") Long id);
 
     @Query("SELECT p FROM Position p LEFT JOIN FETCH p.signal s WHERE p.status = 'ACTIVE' AND s.closingBasis = :basis")
     List<Position> findActiveBySignalClosingBasis(@Param("basis") StopLossBasis basis);

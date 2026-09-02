@@ -6,11 +6,110 @@ import { Badge, statusVariant, statusLabel } from '../components/Badge'
 
 type Tab = 'ACTIVE' | 'PENDING_ENTRY'
 
+const inputCls = 'w-full rounded-md border border-gray-200 px-3 py-2 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400'
+
+// ── Confirm Fill Modal ──────────────────────────────────────────────────────
+
+interface ConfirmFillModalProps {
+  position: Position
+  onClose: () => void
+  onSuccess: () => void
+}
+
+function ConfirmFillModal({ position, onClose, onSuccess }: ConfirmFillModalProps) {
+  const [quantity, setQuantity] = useState(String(position.quantity))
+  const [avgPrice, setAvgPrice] = useState('')
+
+  const confirmFill = useMutation({
+    mutationFn: () => api.post(`/portfolio/positions/${position.id}/confirm-fill`, {
+      quantity: Number(quantity),
+      avgPrice: Number(avgPrice),
+    }),
+    onSuccess: () => {
+      onSuccess()
+      onClose()
+    },
+  })
+
+  const qtyValid = Number(quantity) > 0
+  const priceValid = Number(avgPrice) > 0
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+         onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl">
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Confirm Fill</p>
+            <h2 className="text-lg font-semibold text-gray-900">{position.symbol}</h2>
+          </div>
+          <button onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5">
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            <p className="text-sm text-amber-700">
+              Only confirm if you've verified this order actually filled on Zerodha
+              (order book or holdings). This cannot be undone automatically.
+            </p>
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Filled quantity</label>
+              <input type="number" min={1} step={1} value={quantity}
+                onChange={e => setQuantity(e.target.value)} className={inputCls} />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-medium text-gray-700">Average fill price (₹)</label>
+              <input type="number" min={0} step={0.01} value={avgPrice}
+                onChange={e => setAvgPrice(e.target.value)} placeholder="e.g. 410.50" className={inputCls} />
+            </div>
+          </div>
+
+          {confirmFill.isError && (
+            <p className="mt-3 text-sm text-red-600">
+              {(confirmFill.error as any)?.response?.data?.error ?? 'Could not confirm fill'}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button
+            onClick={() => confirmFill.mutate()}
+            disabled={!qtyValid || !priceValid || confirmFill.isPending}
+            className="rounded-lg bg-indigo-500 px-4 py-2 text-sm font-medium text-white
+                       hover:bg-indigo-600 disabled:cursor-not-allowed disabled:opacity-50">
+            {confirmFill.isPending ? 'Confirming…' : 'Confirm Fill'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PositionsPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('ACTIVE')
   const [exiting, setExiting] = useState<number | null>(null)
   const [cancelling, setCancelling] = useState<number | null>(null)
+  const [confirmingFill, setConfirmingFill] = useState<Position | null>(null)
 
   const { data: positions = [], isLoading } = useQuery<Position[]>({
     queryKey: ['positions'],
@@ -167,11 +266,18 @@ export function PositionsPage() {
                             </button>
                           </div>
                         ) : (
-                          <button onClick={() => setCancelling(pos.id)}
-                            className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
-                                       transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-                            Cancel
-                          </button>
+                          <div className="flex items-center gap-2">
+                            <button onClick={() => setConfirmingFill(pos)}
+                              className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
+                                         transition-colors hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-600">
+                              Confirm Fill
+                            </button>
+                            <button onClick={() => setCancelling(pos.id)}
+                              className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
+                                         transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+                              Cancel
+                            </button>
+                          </div>
                         )
                       )}
                     </td>
@@ -183,6 +289,17 @@ export function PositionsPage() {
           </div>
         )}
       </div>
+
+      {confirmingFill && (
+        <ConfirmFillModal
+          position={confirmingFill}
+          onClose={() => setConfirmingFill(null)}
+          onSuccess={() => {
+            qc.invalidateQueries({ queryKey: ['positions'] })
+            qc.invalidateQueries({ queryKey: ['positions-live'] })
+          }}
+        />
+      )}
     </div>
   )
 }
