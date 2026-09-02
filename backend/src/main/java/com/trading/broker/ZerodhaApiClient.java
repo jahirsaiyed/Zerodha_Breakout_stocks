@@ -350,6 +350,13 @@ public class ZerodhaApiClient {
     }
 
     private BrokerException mapZerodhaError(String errorType, String message) {
+        // "Couldn't find that order_id" is permanent, not transient: Kite's order book is scoped
+        // to the current trading day, so a still-PENDING order from a prior day can never be found
+        // again via this endpoint. Retrying it is pointless — surface it as order-level so callers
+        // can fall back to reconciling against holdings instead.
+        if (isOrderNotFoundError(message)) {
+            return new BrokerOrderException("Zerodha [" + errorType + "]: " + message);
+        }
         return switch (errorType) {
             case "TokenException", "PermissionException" -> new BrokerTokenException(message);
             case "OrderException", "InputException"      -> new BrokerOrderException(message);
@@ -366,6 +373,12 @@ public class ZerodhaApiClient {
         if (message == null) return false;
         String lower = message.toLowerCase();
         return lower.contains("no static ip") || lower.contains("static ip not set");
+    }
+
+    private boolean isOrderNotFoundError(String message) {
+        if (message == null) return false;
+        String lower = message.toLowerCase();
+        return lower.contains("find that") && lower.contains("order_id");
     }
 
     // ── Retry ────────────────────────────────────────────────────────────────

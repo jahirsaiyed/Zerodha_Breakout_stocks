@@ -334,6 +334,13 @@ public class PortfolioEngine {
         BrokerOrderDetail detail;
         try {
             detail = broker.getOrderDetail(orderId);
+        } catch (BrokerOrderException e) {
+            // Order aged out of Zerodha's day-scoped order book (e.g. "Couldn't find that order_id").
+            // The order itself can never be looked up again this way — fall back to holdings.
+            log.warn("[FILL] order={} not found for pos={} (aged past trading day) — reconciling via holdings: {}",
+                    orderId, pos.getId(), e.getMessage());
+            reconcileViaHoldings(config, broker, pos);
+            return;
         } catch (BrokerNetworkException e) {
             log.warn("[FILL] could not get order detail for pos={}: {}", pos.getId(), e.getMessage());
             return;
@@ -348,6 +355,39 @@ public class PortfolioEngine {
         } else {
             // Still PENDING — check expiry
             checkExpiry(config, broker, pos, orderId);
+        }
+    }
+
+    /**
+     * Falls back to the broker's live holdings when an order can no longer be looked up by ID
+     * (Kite's order book only covers the current trading day). If the symbol shows up in holdings
+     * with enough quantity, the order must have filled — activate the position using the holding's
+     * average price. Otherwise it never filled (cancelled/rejected/expired without us observing it).
+     */
+    private void reconcileViaHoldings(UserConfig config, BrokerAdapter broker, Position pos) {
+        List<Holding> holdings;
+        try {
+            holdings = broker.getHoldings();
+        } catch (BrokerNetworkException e) {
+            log.warn("[FILL] could not fetch holdings to reconcile pos={}: {}", pos.getId(), e.getMessage());
+            return;
+        }
+
+        Optional<Holding> holding = holdings.stream()
+                .filter(h -> h.symbol().equalsIgnoreCase(pos.getSymbol()))
+                .findFirst();
+
+        if (holding.isPresent() && holding.get().quantity() >= pos.getQuantity()) {
+            Holding h = holding.get();
+            int filledQty = Math.min(h.quantity(), pos.getQuantity());
+            log.info("[FILL] RECONCILED via holdings pos={} symbol={} qty={} avgPrice={}",
+                    pos.getId(), pos.getSymbol(), filledQty, h.avgPrice());
+            handleFill(config, broker, pos, new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, filledQty, h.avgPrice()));
+        } else {
+            db.markPositionCancelled(pos.getId());
+            events.publishEvent(new OrderCancelledEvent(pos.getId(), pos.getSymbol(), pos.getEntryOrderId(), "NOT_FOUND"));
+            log.info("[FILL] CANCELLED (reconciled) pos={} symbol={} — not found in order book or holdings",
+                    pos.getId(), pos.getSymbol());
         }
     }
 
