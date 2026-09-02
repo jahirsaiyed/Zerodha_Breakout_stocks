@@ -84,6 +84,17 @@ class PortfolioEventListenerTest {
     }
 
     @Test
+    @DisplayName("onOrderLookupFailed notifies for position with symbol and order ID")
+    void onOrderLookupFailed_notifiesForPosition() {
+        var event = new OrderLookupFailedEvent(10L, "RELIANCE", "ORD123");
+        listener.onOrderLookupFailed(event);
+
+        ArgumentCaptor<String> msgCaptor = ArgumentCaptor.forClass(String.class);
+        verify(notifications).notifyForPosition(eq(10L), msgCaptor.capture());
+        assertThat(msgCaptor.getValue()).contains("RELIANCE").contains("ORD123");
+    }
+
+    @Test
     @DisplayName("onPositionClosed CLOSED_TARGET shows target hit with P&L")
     void onPositionClosed_targetHit_showsTargetHeader() {
         var event = new PositionClosedEvent(10L, "RELIANCE", PositionStatus.CLOSED_TARGET, BigDecimal.valueOf(2500));

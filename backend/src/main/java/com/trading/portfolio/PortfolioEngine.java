@@ -334,6 +334,16 @@ public class PortfolioEngine {
         BrokerOrderDetail detail;
         try {
             detail = broker.getOrderDetail(orderId);
+        } catch (BrokerOrderException e) {
+            // Order aged out of Zerodha's day-scoped order book (e.g. "Couldn't find that order_id").
+            // It can never be looked up again this way, and holdings alone can't prove this order
+            // caused them (a pre-existing manual holding in the same symbol would look identical) —
+            // guessing FILLED here could place a live GTT sell against shares we don't actually own
+            // for this position. Leave the position untouched and ask a human to reconcile it.
+            log.error("[FILL] order={} not found for pos={} symbol={} (aged past trading day) — needs manual reconciliation: {}",
+                    orderId, pos.getId(), pos.getSymbol(), e.getMessage());
+            events.publishEvent(new OrderLookupFailedEvent(pos.getId(), pos.getSymbol(), orderId));
+            return;
         } catch (BrokerNetworkException e) {
             log.warn("[FILL] could not get order detail for pos={}: {}", pos.getId(), e.getMessage());
             return;
