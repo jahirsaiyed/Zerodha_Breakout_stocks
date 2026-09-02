@@ -2,11 +2,8 @@ package com.trading.users;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.trading.auth.JwtUtil;
-import com.trading.portfolio.PortfolioDbService;
 import com.trading.portfolio.PortfolioEngine;
 import com.trading.signals.InstrumentCacheService;
-import com.trading.signals.Position;
-import com.trading.signals.PositionStatus;
 import com.trading.signals.SignalSyncLog;
 import com.trading.signals.SignalSyncLogRepository;
 import com.trading.users.dto.UserResponse;
@@ -17,17 +14,14 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.context.annotation.Import;
 import org.springframework.data.domain.Pageable;
-import org.springframework.http.MediaType;
 import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
-import java.util.Optional;
 
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -48,7 +42,6 @@ class AdminControllerTest {
     @MockBean SignalSyncLogRepository syncLogRepository;
     @MockBean InstrumentCacheService instrumentCacheService;
     @MockBean PortfolioEngine portfolioEngine;
-    @MockBean PortfolioDbService portfolioDbService;
     @MockBean JwtUtil jwtUtil;
 
     // ── GET /admin/health ─────────────────────────────────────────────────────
@@ -131,49 +124,5 @@ class AdminControllerTest {
                 .andExpect(jsonPath("$.success").value(true));
 
         verify(userService).setUserActive(1L, false);
-    }
-
-    // ── POST /admin/portfolio/positions/{id}/confirm-fill ───────────────────────
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("POST /admin/portfolio/positions/{id}/confirm-fill activates the position")
-    void confirmFill_validRequest_returnsUpdatedPosition() throws Exception {
-        Position updated = Position.builder()
-                .id(10L).symbol("BALRAMCHIN").quantity(4)
-                .avgEntryPrice(BigDecimal.valueOf(410.5))
-                .status(PositionStatus.ACTIVE)
-                .build();
-        when(portfolioDbService.getPositionById(10L)).thenReturn(Optional.of(updated));
-
-        mockMvc.perform(post("/api/admin/portfolio/positions/10/confirm-fill")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"quantity\":4,\"avgPrice\":410.50}"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.symbol").value("BALRAMCHIN"))
-                .andExpect(jsonPath("$.data.status").value("ACTIVE"));
-
-        verify(portfolioEngine).confirmManualFill(10L, 4, new BigDecimal("410.50"));
-    }
-
-    @Test
-    @WithMockUser(username = "admin@test.com", roles = "ADMIN")
-    @DisplayName("POST /admin/portfolio/positions/{id}/confirm-fill rejects non-positive quantity")
-    void confirmFill_invalidQuantity_returns400() throws Exception {
-        mockMvc.perform(post("/api/admin/portfolio/positions/10/confirm-fill")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"quantity\":0,\"avgPrice\":410.50}"))
-                .andExpect(status().isBadRequest());
-
-        verify(portfolioEngine, never()).confirmManualFill(any(), anyInt(), any());
-    }
-
-    @Test
-    @DisplayName("POST /admin/portfolio/positions/{id}/confirm-fill requires authentication")
-    void confirmFill_unauthenticated_returns403() throws Exception {
-        mockMvc.perform(post("/api/admin/portfolio/positions/10/confirm-fill")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"quantity\":4,\"avgPrice\":410.50}"))
-                .andExpect(status().isForbidden());
     }
 }

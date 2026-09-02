@@ -20,10 +20,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.MediaType;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
@@ -112,6 +114,70 @@ class PortfolioControllerTest {
 
         mockMvc.perform(post("/api/portfolio/positions/99/exit"))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/confirm-fill activates the position")
+    void confirmFill_validPosition_returns200() throws Exception {
+        Position pending = buildPosition();
+        pending.setId(10L);
+        pending.setStatus(PositionStatus.PENDING_ENTRY);
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getPositionsByStatus(1L, PositionStatus.PENDING_ENTRY)).thenReturn(List.of(pending));
+
+        Position activated = buildPosition();
+        activated.setId(10L);
+        activated.setStatus(PositionStatus.ACTIVE);
+        activated.setQuantity(4);
+        activated.setAvgEntryPrice(new BigDecimal("410.50"));
+        when(db.getPositionById(10L)).thenReturn(Optional.of(activated));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/confirm-fill")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":4,\"avgPrice\":410.50}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ACTIVE"))
+                .andExpect(jsonPath("$.quantity").value(4));
+
+        verify(engine).confirmManualFill(10L, 4, new BigDecimal("410.50"));
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/confirm-fill returns 400 for non-existent or not-owned position")
+    void confirmFill_positionNotFoundOrNotOwned_returns400() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getPositionsByStatus(1L, PositionStatus.PENDING_ENTRY)).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/portfolio/positions/99/confirm-fill")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":4,\"avgPrice\":410.50}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).confirmManualFill(any(), anyInt(), any());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/confirm-fill rejects non-positive quantity")
+    void confirmFill_invalidQuantity_returns400() throws Exception {
+        mockMvc.perform(post("/api/portfolio/positions/10/confirm-fill")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":0,\"avgPrice\":410.50}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).confirmManualFill(any(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/portfolio/positions/{id}/confirm-fill requires authentication")
+    void confirmFill_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(post("/api/portfolio/positions/10/confirm-fill")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":4,\"avgPrice\":410.50}"))
+                .andExpect(status().isForbidden());
     }
 
     @Test
