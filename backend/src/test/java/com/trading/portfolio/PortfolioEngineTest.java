@@ -319,6 +319,37 @@ class PortfolioEngineTest {
                 .hasMessageContaining("99");
     }
 
+    // ── confirmManualFill ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("confirmManualFill activates position with admin-supplied qty/price, places GTT")
+    void confirmManualFill_activatesPositionWithSuppliedFillData() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
+        pos.setSignal(signal);
+
+        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT456");
+
+        engine.confirmManualFill(10L, 4, BigDecimal.valueOf(410.50));
+
+        verify(broker, never()).getOrderDetail(anyString()); // never asks Zerodha — caller already verified
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), "GTT456");
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
+    }
+
+    @Test
+    @DisplayName("confirmManualFill throws when position is not PENDING_ENTRY")
+    void confirmManualFill_positionNotPending_throws() {
+        when(db.getPendingEntryPositions()).thenReturn(List.of());
+
+        assertThatThrownBy(() -> engine.confirmManualFill(99L, 4, BigDecimal.valueOf(410.50)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("99");
+    }
+
     // ── checkClosingBasisStopLoss ─────────────────────────────────────────────
 
     @Test

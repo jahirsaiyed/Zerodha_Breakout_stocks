@@ -363,7 +363,7 @@ public class PortfolioEngine {
 
     private void handleFill(UserConfig config, BrokerAdapter broker,
                              Position pos, BrokerOrderDetail detail) {
-        int filledQty = detail.isPartiallyFilled() ? detail.filledQuantity() : pos.getQuantity();
+        int filledQty = detail.filledQuantity() > 0 ? detail.filledQuantity() : pos.getQuantity();
 
         // For partial fill: cancel remaining open quantity on Zerodha
         if (detail.isPartiallyFilled()) {
@@ -614,6 +614,33 @@ public class PortfolioEngine {
         db.markPositionCancelled(positionId);
         events.publishEvent(new OrderCancelledEvent(positionId, pos.getSymbol(), orderId, "manual_cancel"));
         log.info("[CANCEL] DONE pos={} symbol={}", positionId, pos.getSymbol());
+    }
+
+    // ── Manual fill confirmation (admin) ────────────────────────────────────────
+
+    /**
+     * Manually confirms a fill for a pending position whose order can no longer be verified
+     * with Zerodha (e.g. aged past the trading day — see {@link com.trading.portfolio.events.OrderLookupFailedEvent}).
+     * The caller is asserting ground truth from Zerodha's own order/holdings view; this never
+     * queries the broker to decide fill status, only to place the resulting GTT target order.
+     */
+    public Long confirmManualFill(Long positionId, int quantity, BigDecimal avgPrice) {
+        Position pos = db.getPendingEntryPositions().stream()
+                .filter(p -> p.getId().equals(positionId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Pending position not found: " + positionId));
+
+        UserConfig config = db.getUserConfigByUserId(pos.getUser().getId())
+                .orElseThrow(() -> new IllegalStateException("No config for user " + pos.getUser().getId()));
+
+        log.info("[CONFIRM-FILL] START pos={} symbol={} qty={} avgPrice={}",
+                positionId, pos.getSymbol(), quantity, avgPrice);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        handleFill(config, broker, pos, new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, quantity, avgPrice));
+
+        log.info("[CONFIRM-FILL] DONE pos={} symbol={}", positionId, pos.getSymbol());
+        return positionId;
     }
 
     // ── Manual exit ───────────────────────────────────────────────────────────

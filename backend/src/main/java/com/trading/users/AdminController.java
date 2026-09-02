@@ -1,8 +1,12 @@
 package com.trading.users;
 
 import com.trading.common.ApiResponse;
+import com.trading.portfolio.PortfolioDbService;
 import com.trading.portfolio.PortfolioEngine;
+import com.trading.portfolio.dto.ConfirmFillRequest;
+import com.trading.portfolio.dto.PositionResponse;
 import com.trading.signals.InstrumentCacheService;
+import com.trading.signals.Position;
 import com.trading.signals.SignalSyncLog;
 import com.trading.signals.SignalSyncLogRepository;
 import com.trading.users.dto.CreateUserRequest;
@@ -33,6 +37,7 @@ public class AdminController {
     private final SignalSyncLogRepository syncLogRepository;
     private final InstrumentCacheService instrumentCacheService;
     private final PortfolioEngine portfolioEngine;
+    private final PortfolioDbService portfolioDbService;
 
     @GetMapping("/users")
     @Operation(summary = "List all users")
@@ -101,5 +106,17 @@ public class AdminController {
     public ResponseEntity<ApiResponse<Void>> reconcileGtt() {
         portfolioEngine.reconcileGttExits();
         return ResponseEntity.ok(ApiResponse.success(null));
+    }
+
+    @PostMapping("/portfolio/positions/{id}/confirm-fill")
+    @Operation(summary = "Manually confirm a fill for a position whose order can no longer be verified with Zerodha "
+            + "(e.g. order_id aged past the trading day). The caller must independently verify the actual fill "
+            + "on Zerodha first — this never queries the broker to decide fill status.")
+    public ResponseEntity<ApiResponse<PositionResponse>> confirmFill(
+            @PathVariable Long id, @RequestBody @Valid ConfirmFillRequest req) {
+        portfolioEngine.confirmManualFill(id, req.quantity(), req.avgPrice());
+        Position pos = portfolioDbService.getPositionById(id)
+                .orElseThrow(() -> new IllegalStateException("Position not found after confirm-fill: " + id));
+        return ResponseEntity.ok(ApiResponse.success(PositionResponse.from(pos)));
     }
 }
