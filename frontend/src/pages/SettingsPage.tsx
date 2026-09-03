@@ -71,6 +71,7 @@ export function SettingsPage() {
   const [zerodhaMsg, setZerodhaMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [botToken, setBotToken] = useState('')
   const [botMsg, setBotMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [pauseError, setPauseError] = useState('')
 
   const { data: config } = useQuery<UserConfig>({
     queryKey: ['config'],
@@ -171,7 +172,11 @@ export function SettingsPage() {
   const togglePause = useMutation({
     mutationFn: (patch: { tradingPaused?: boolean; syncPaused?: boolean }) =>
       api.put('/users/me/config', patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['config'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['config'] })
+      setPauseError('')
+    },
+    onError: (e: any) => setPauseError(e.response?.data?.error ?? 'Failed to update setting'),
   })
 
   const disconnect = useMutation({
@@ -181,6 +186,7 @@ export function SettingsPage() {
       qc.invalidateQueries({ queryKey: ['account-summary'] })
       setZerodhaMsg({ type: 'success', text: 'Zerodha disconnected.' })
     },
+    onError: (e: any) => setZerodhaMsg({ type: 'error', text: e.response?.data?.error ?? 'Failed to disconnect Zerodha' }),
   })
 
   const changePassword = useMutation({
@@ -218,6 +224,10 @@ export function SettingsPage() {
       setBotMsg({ ok: true, text: 'Bot disconnected.' })
       setTimeout(() => setBotMsg(null), 4000)
     },
+    onError: (e: any) => {
+      setBotMsg({ ok: false, text: e.response?.data?.error ?? 'Failed to disconnect bot' })
+      setTimeout(() => setBotMsg(null), 4000)
+    },
   })
 
   const telegramTest = useMutation({
@@ -226,8 +236,8 @@ export function SettingsPage() {
       setTelegramTestMsg('Test message sent!')
       setTimeout(() => setTelegramTestMsg(''), 4000)
     },
-    onError: () => {
-      setTelegramTestMsg('Failed to send — check your Chat ID and bot token.')
+    onError: (e: any) => {
+      setTelegramTestMsg(e.response?.data?.error ?? 'Failed to send — check your Chat ID and bot token.')
       setTimeout(() => setTelegramTestMsg(''), 4000)
     },
   })
@@ -322,6 +332,7 @@ export function SettingsPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="mb-1 text-sm font-semibold text-gray-900">System Controls</h2>
         <p className="mb-5 text-xs text-gray-400">Changes take effect immediately — no save required.</p>
+        {pauseError && <p className="mb-4 text-xs text-red-600">{pauseError}</p>}
         <div className="space-y-5">
           <div className="flex items-center justify-between gap-4">
             <div>
@@ -392,6 +403,7 @@ export function SettingsPage() {
       <div className="rounded-xl border border-gray-200 bg-white p-6">
         <h2 className="mb-1 text-sm font-semibold text-gray-900">Quick Controls</h2>
         <p className="mb-5 text-xs text-gray-400">Changes take effect immediately — no save required.</p>
+        {pauseError && <p className="mb-4 text-xs text-red-600">{pauseError}</p>}
         <div className="flex flex-col gap-4 sm:flex-row sm:gap-8">
           <div className="flex items-center gap-3">
             <Toggle

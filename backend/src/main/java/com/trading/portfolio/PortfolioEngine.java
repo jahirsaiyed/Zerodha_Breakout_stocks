@@ -379,7 +379,9 @@ public class PortfolioEngine {
         try {
             gttId = broker.placeGttTargetOrder(pos.getSymbol(), halfQty,
                     signal.getTarget(), "pos_" + pos.getId());
-        } catch (BrokerOrderException e) {
+        } catch (BrokerException e) {
+            // Any broker failure placing the GTT (rejected order, expired token, network) must not
+            // block recording the fill itself — the entry already happened, so activate without a GTT.
             log.error("GTT target placement failed for pos {}: {} — position marked ACTIVE without GTT",
                     pos.getId(), e.getMessage());
         }

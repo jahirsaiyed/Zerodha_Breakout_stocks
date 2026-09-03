@@ -221,6 +221,7 @@ export function SignalsPage() {
   const [syncResult, setSyncResult] = useState<{ added: number; modified: number; removed: number } | null>(null)
   const [tradeSignal, setTradeSignal] = useState<Signal | null>(null)
   const [successMsg, setSuccessMsg] = useState('')
+  const [actionError, setActionError] = useState('')
 
   const { data: signals = [], isLoading } = useQuery<Signal[]>({
     queryKey: ['signals'],
@@ -287,7 +288,11 @@ export function SignalsPage() {
 
   const cancelSignal = useMutation({
     mutationFn: (id: number) => api.delete(`/signals/${id}`),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['signals'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['signals'] })
+      setActionError('')
+    },
+    onError: (e: any) => setActionError(e.response?.data?.error ?? 'Failed to cancel signal'),
   })
 
   const syncNow = useMutation({
@@ -297,8 +302,10 @@ export function SignalsPage() {
       qc.invalidateQueries({ queryKey: ['signals-quotes'] })
       const d = res.data.data
       setSyncResult({ added: d.signalsAdded, modified: d.signalsModified, removed: d.signalsRemoved })
+      setActionError('')
       setTimeout(() => setSyncResult(null), 8000)
     },
+    onError: (e: any) => setActionError(e.response?.data?.error ?? 'Sync failed'),
   })
 
   const handleSubmit = (e: FormEvent) => {
@@ -366,6 +373,12 @@ export function SignalsPage() {
       {syncResult && (
         <div className="mb-4 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-700">
           Sync complete — {syncResult.added} added, {syncResult.modified} modified, {syncResult.removed} removed
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          {actionError}
         </div>
       )}
 

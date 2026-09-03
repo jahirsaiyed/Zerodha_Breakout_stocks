@@ -341,6 +341,25 @@ class PortfolioEngineTest {
     }
 
     @Test
+    @DisplayName("confirmManualFill still activates position when GTT placement fails with a token/permission error")
+    void confirmManualFill_gttPlacementFailsWithBrokerTokenException_stillActivatesPosition() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
+        pos.setSignal(signal);
+
+        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString()))
+                .thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+
+        engine.confirmManualFill(10L, 4, BigDecimal.valueOf(410.50));
+
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), null);
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
+    }
+
+    @Test
     @DisplayName("confirmManualFill throws when position is not PENDING_ENTRY")
     void confirmManualFill_positionNotPending_throws() {
         when(db.getPendingEntryPositions()).thenReturn(List.of());

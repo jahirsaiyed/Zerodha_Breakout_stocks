@@ -1,5 +1,7 @@
 package com.trading.common;
 
+import com.trading.broker.BrokerException;
+import com.trading.broker.BrokerTokenException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,6 +35,17 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(IllegalStateException.class)
     public ResponseEntity<ApiResponse<Void>> handleIllegalState(IllegalStateException e) {
         return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(ApiResponse.error(e.getMessage()));
+    }
+
+    @ExceptionHandler(BrokerTokenException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBrokerToken(BrokerTokenException e) {
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(ApiResponse.error(e.getMessage()));
+    }
+
+    @ExceptionHandler(BrokerException.class)
+    public ResponseEntity<ApiResponse<Void>> handleBroker(BrokerException e) {
+        log.warn("Broker call failed: {}", e.getMessage());
+        return ResponseEntity.status(HttpStatus.BAD_GATEWAY).body(ApiResponse.error(e.getMessage()));
     }
 
     @ExceptionHandler(MethodArgumentNotValidException.class)
