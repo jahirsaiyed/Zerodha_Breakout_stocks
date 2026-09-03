@@ -14,6 +14,7 @@ export function AdminPage() {
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'USER' })
   const [formError, setFormError] = useState('')
+  const [toggleError, setToggleError] = useState('')
 
   if (user?.role !== 'ADMIN') return <Navigate to="/" replace />
 
@@ -31,7 +32,11 @@ export function AdminPage() {
   const toggleActive = useMutation({
     mutationFn: ({ id, active }: { id: number; active: boolean }) =>
       api.patch(`/admin/users/${id}/status`, null, { params: { active } }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['admin-users'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['admin-users'] })
+      setToggleError('')
+    },
+    onError: (e: any) => setToggleError(e.response?.data?.error ?? 'Failed to update user status'),
   })
 
   const createUser = useMutation({
@@ -153,6 +158,8 @@ export function AdminPage() {
           </form>
         </div>
       )}
+
+      {toggleError && <p className="mb-3 text-sm text-red-600">{toggleError}</p>}
 
       <div className="rounded-xl border border-gray-200 bg-white">
         {isLoading ? (

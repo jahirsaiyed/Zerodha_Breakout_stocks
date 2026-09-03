@@ -110,6 +110,7 @@ export function PositionsPage() {
   const [exiting, setExiting] = useState<number | null>(null)
   const [cancelling, setCancelling] = useState<number | null>(null)
   const [confirmingFill, setConfirmingFill] = useState<Position | null>(null)
+  const [actionError, setActionError] = useState('')
 
   const { data: positions = [], isLoading } = useQuery<Position[]>({
     queryKey: ['positions'],
@@ -131,7 +132,9 @@ export function PositionsPage() {
       qc.invalidateQueries({ queryKey: ['positions'] })
       qc.invalidateQueries({ queryKey: ['positions-live'] })
       setExiting(null)
+      setActionError('')
     },
+    onError: (e: any) => setActionError(e.response?.data?.error ?? 'Failed to exit position'),
   })
 
   const cancel = useMutation({
@@ -139,7 +142,9 @@ export function PositionsPage() {
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['positions'] })
       setCancelling(null)
+      setActionError('')
     },
+    onError: (e: any) => setActionError(e.response?.data?.error ?? 'Failed to cancel position'),
   })
 
   const rows = positions.filter(p => p.status === tab)
@@ -154,6 +159,12 @@ export function PositionsPage() {
         <h1 className="text-xl font-semibold text-gray-950">Positions</h1>
         <p className="text-sm text-gray-500">Manage your active and pending orders</p>
       </div>
+
+      {actionError && (
+        <div className="mb-4 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">
+          {actionError}
+        </div>
+      )}
 
       <div className="rounded-xl border border-gray-200 bg-white">
         {/* Tabs */}
