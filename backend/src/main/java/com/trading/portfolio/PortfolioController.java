@@ -23,9 +23,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.data.domain.PageRequest;
 
 import java.math.BigDecimal;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 @Slf4j
 @RestController
@@ -156,11 +159,11 @@ public class PortfolioController {
 
         if (active.isEmpty()) return List.of();
 
-        // Try to fetch live quotes; fall back to null LTP if not connected
-        Map<String, BigDecimal> quotes = fetchQuotes(userId, active);
+        // Try to fetch live prices; fall back to null LTP if not connected
+        Map<String, BigDecimal> prices = fetchLivePrices(userId, active);
 
         return active.stream()
-                .map(pos -> LivePositionResponse.of(pos, quotes.get(pos.getSymbol())))
+                .map(pos -> LivePositionResponse.of(pos, prices.get(pos.getSymbol())))
                 .toList();
     }
 
@@ -216,18 +219,32 @@ public class PortfolioController {
         return ResponseEntity.ok(PositionResponse.from(pos));
     }
 
-    private Map<String, BigDecimal> fetchQuotes(Long userId, List<Position> positions) {
+    /**
+     * Sources last-traded prices from holdings + day positions rather than {@link BrokerAdapter#getQuotes},
+     * since the quote/market-data API requires a subscription many API keys don't have, while holdings
+     * and day positions are part of the base Portfolio API and return {@code last_price} regardless.
+     * Day positions are applied last so a same-day fill (not yet settled into holdings) still resolves.
+     */
+    private Map<String, BigDecimal> fetchLivePrices(Long userId, List<Position> positions) {
         Optional<UserConfig> configOpt = db.getUserConfigByUserId(userId);
         if (configOpt.isEmpty()) return Map.of();
+
+        Set<String> symbols = positions.stream().map(Position::getSymbol).collect(Collectors.toSet());
         try {
             BrokerAdapter adapter = brokerAdapterFactory.forUser(configOpt.get());
-            List<String> symbols = positions.stream().map(Position::getSymbol).toList();
-            return adapter.getQuotes(symbols);
+            Map<String, BigDecimal> prices = new HashMap<>();
+            adapter.getHoldings().forEach(h -> {
+                if (symbols.contains(h.symbol())) prices.put(h.symbol(), h.lastPrice());
+            });
+            adapter.getDayPositions().forEach(p -> {
+                if (symbols.contains(p.symbol())) prices.put(p.symbol(), p.lastPrice());
+            });
+            return prices;
         } catch (BrokerTokenException e) {
-            log.debug("Live quotes unavailable for user {} (token/permission issue): {}", userId, e.getMessage());
+            log.debug("Live prices unavailable for user {} (token/permission issue): {}", userId, e.getMessage());
             return Map.of();
         } catch (Exception e) {
-            log.debug("Live quotes unavailable for user {} ({}): {}", userId, e.getClass().getSimpleName(), e.getMessage());
+            log.debug("Live prices unavailable for user {} ({}): {}", userId, e.getClass().getSimpleName(), e.getMessage());
             return Map.of();
         }
     }

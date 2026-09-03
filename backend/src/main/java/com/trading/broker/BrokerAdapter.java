@@ -57,6 +57,12 @@ public interface BrokerAdapter {
     /** Returns all holdings (long positions) in the user's demat account. */
     List<Holding> getHoldings();
 
+    /**
+     * Returns today's net day positions — covers a position filled today that hasn't
+     * settled into holdings yet (Kite settles CNC holdings T+1).
+     */
+    List<Holding> getDayPositions();
+
     /** Returns available cash margin for the equity segment. */
     BigDecimal getAvailableMargin();
 

@@ -231,6 +231,30 @@ public class ZerodhaApiClient {
         });
     }
 
+    /**
+     * Returns today's net day positions (e.g. a delivery buy filled today that hasn't
+     * settled into holdings yet — Kite settles CNC holdings T+1). Unlike {@link #getQuotes},
+     * this endpoint is part of the base Portfolio API and needs no market-data subscription.
+     */
+    public List<Holding> getDayPositions() {
+        return executeWithRetry(() -> {
+            JsonNode data = get("/portfolio/positions");
+            List<Holding> result = new ArrayList<>();
+            JsonNode net = data.path("net");
+            if (net.isArray()) {
+                for (JsonNode p : net) {
+                    result.add(new Holding(
+                            p.path("tradingsymbol").asText(),
+                            p.path("quantity").asInt(),
+                            new BigDecimal(p.path("average_price").asText("0")),
+                            new BigDecimal(p.path("last_price").asText("0"))
+                    ));
+                }
+            }
+            return result;
+        });
+    }
+
     public BigDecimal getAvailableMargin() {
         return executeWithRetry(() -> {
             JsonNode data = get("/user/margins/equity");

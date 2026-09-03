@@ -75,6 +75,11 @@ public class ZerodhaBrokerAdapter implements BrokerAdapter {
     }
 
     @Override
+    public List<Holding> getDayPositions() {
+        return apiClient.getDayPositions();
+    }
+
+    @Override
     public BigDecimal getAvailableMargin() {
         return apiClient.getAvailableMargin();
     }
