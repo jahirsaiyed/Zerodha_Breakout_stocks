@@ -169,6 +169,19 @@ class ZerodhaBrokerAdapterTest {
                 .first().extracting(Holding::symbol).isEqualTo("RELIANCE");
     }
 
+    // ── getDayPositions ───────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("getDayPositions delegates and returns list")
+    void getDayPositions_delegatesAndReturns() {
+        List<Holding> positions = List.of(
+                new Holding("AIIL", 4, new BigDecimal("527.35"), new BigDecimal("540.00")));
+        when(apiClient.getDayPositions()).thenReturn(positions);
+
+        assertThat(adapter.getDayPositions()).hasSize(1)
+                .first().extracting(Holding::symbol).isEqualTo("AIIL");
+    }
+
     // ── getAvailableMargin ────────────────────────────────────────────────────
 
     @Test

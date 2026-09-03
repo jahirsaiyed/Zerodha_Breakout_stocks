@@ -209,6 +209,88 @@ class PortfolioControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ── GET /api/portfolio/positions/live ───────────────────────────────────────
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("GET /api/portfolio/positions/live sources LTP from holdings, not the quote API")
+    void getLivePositions_sourcesLtpFromHoldings() throws Exception {
+        Position pos = buildPosition();
+        pos.setAvgEntryPrice(new BigDecimal("152.18"));
+        pos.setQuantity(29);
+
+        com.trading.users.UserConfig config = com.trading.users.UserConfig.builder().build();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getPositionsByStatus(1L, PositionStatus.ACTIVE)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(config));
+
+        com.trading.broker.BrokerAdapter broker = mock(com.trading.broker.BrokerAdapter.class);
+        when(brokerAdapterFactory.forUser(config)).thenReturn(broker);
+        when(broker.getHoldings()).thenReturn(List.of(
+                new com.trading.broker.Holding("RELIANCE", 29, new BigDecimal("152.18"), new BigDecimal("155.00"))));
+        when(broker.getDayPositions()).thenReturn(List.of());
+
+        mockMvc.perform(get("/api/portfolio/positions/live"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ltp").value(155.00))
+                .andExpect(jsonPath("$[0].unrealisedPnl").value(81.78));
+
+        verify(broker, never()).getQuotes(any());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("GET /api/portfolio/positions/live falls back to day positions for a same-day fill not yet in holdings")
+    void getLivePositions_fallsBackToDayPositions() throws Exception {
+        Position pos = buildPosition();
+        pos.setAvgEntryPrice(new BigDecimal("527.35"));
+        pos.setQuantity(4);
+
+        com.trading.users.UserConfig config = com.trading.users.UserConfig.builder().build();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getPositionsByStatus(1L, PositionStatus.ACTIVE)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(config));
+
+        com.trading.broker.BrokerAdapter broker = mock(com.trading.broker.BrokerAdapter.class);
+        when(brokerAdapterFactory.forUser(config)).thenReturn(broker);
+        when(broker.getHoldings()).thenReturn(List.of());
+        when(broker.getDayPositions()).thenReturn(List.of(
+                new com.trading.broker.Holding("RELIANCE", 4, new BigDecimal("527.35"), new BigDecimal("540.00"))));
+
+        mockMvc.perform(get("/api/portfolio/positions/live"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ltp").value(540.00));
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("GET /api/portfolio/positions/live falls back to null LTP when broker call fails")
+    void getLivePositions_brokerFails_returnsNullLtp() throws Exception {
+        Position pos = buildPosition();
+        com.trading.users.UserConfig config = com.trading.users.UserConfig.builder().build();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getPositionsByStatus(1L, PositionStatus.ACTIVE)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(config));
+
+        com.trading.broker.BrokerAdapter broker = mock(com.trading.broker.BrokerAdapter.class);
+        when(brokerAdapterFactory.forUser(config)).thenReturn(broker);
+        when(broker.getHoldings()).thenThrow(new com.trading.broker.BrokerTokenException("no access token"));
+
+        mockMvc.perform(get("/api/portfolio/positions/live"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].ltp").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/portfolio/positions/live requires authentication")
+    void getLivePositions_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(get("/api/portfolio/positions/live"))
+                .andExpect(status().isForbidden());
+    }
+
     private Position buildPosition() {
         User user = User.builder()
                 .id(1L).email("user@example.com").name("Test").passwordHash("x").build();
