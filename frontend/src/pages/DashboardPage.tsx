@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import api from '../lib/api'
-import type { LivePosition, Position } from '../lib/types'
+import type { LivePosition, Position, UserConfig } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
 import { useAuth } from '../contexts/AuthContext'
 
@@ -40,6 +40,11 @@ export function DashboardPage() {
     refetchInterval: 30_000,
   })
 
+  const { data: config } = useQuery<UserConfig>({
+    queryKey: ['config'],
+    queryFn: () => api.get('/users/me/config').then(r => r.data.data),
+  })
+
   const liveMap = new Map(live.map(p => [p.id, p]))
 
   const active  = positions.filter(p => p.status === 'ACTIVE')
@@ -56,9 +61,23 @@ export function DashboardPage() {
 
   return (
     <div className="p-4 sm:p-8">
-      <div className="mb-6">
-        <h1 className="text-xl font-semibold text-gray-950">Dashboard</h1>
-        <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
+      <div className="mb-6 flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-gray-950">Dashboard</h1>
+          <p className="text-sm text-gray-500">Welcome back, {user?.name}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-gray-500">Zerodha</span>
+          <Badge
+            label={config?.zerodhaConnected ? 'Connected' : 'Not connected'}
+            variant={config?.zerodhaConnected ? 'green' : 'gray'}
+          />
+          {!config?.zerodhaConnected && (
+            <Link to="/settings" className="text-xs text-indigo-600 hover:text-indigo-700">
+              Reconnect →
+            </Link>
+          )}
+        </div>
       </div>
 
       {/* Stats */}
