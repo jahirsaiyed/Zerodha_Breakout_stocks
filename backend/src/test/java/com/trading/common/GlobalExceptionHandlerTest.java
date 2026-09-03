@@ -1,5 +1,7 @@
 package com.trading.common;
 
+import com.trading.broker.BrokerOrderException;
+import com.trading.broker.BrokerTokenException;
 import jakarta.validation.ConstraintViolation;
 import jakarta.validation.ConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
@@ -51,6 +53,28 @@ class GlobalExceptionHandlerTest {
 
         assertThat(res.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
         assertThat(res.getBody().error()).isEqualTo("Access denied");
+    }
+
+    @Test
+    @DisplayName("BrokerTokenException → 401 with actionable message")
+    void handleBrokerToken_returns401() {
+        ResponseEntity<ApiResponse<Void>> res =
+                handler.handleBrokerToken(new BrokerTokenException("User has no Zerodha access token — please re-login via Settings"));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(res.getBody().success()).isFalse();
+        assertThat(res.getBody().error()).isEqualTo("User has no Zerodha access token — please re-login via Settings");
+    }
+
+    @Test
+    @DisplayName("BrokerException → 502 with real message, not a generic one")
+    void handleBroker_returns502() {
+        ResponseEntity<ApiResponse<Void>> res =
+                handler.handleBroker(new BrokerOrderException("Insufficient permission for that call."));
+
+        assertThat(res.getStatusCode()).isEqualTo(HttpStatus.BAD_GATEWAY);
+        assertThat(res.getBody().success()).isFalse();
+        assertThat(res.getBody().error()).isEqualTo("Insufficient permission for that call.");
     }
 
     @Test
