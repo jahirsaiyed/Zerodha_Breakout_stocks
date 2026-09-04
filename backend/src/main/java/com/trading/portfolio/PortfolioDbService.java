@@ -71,12 +71,18 @@ public class PortfolioDbService {
 
     @Transactional
     public Long createPendingPosition(UserConfig config, Signal signal, int quantity) {
+        return createPendingPosition(config, signal, quantity, EntrySource.AUTO);
+    }
+
+    @Transactional
+    public Long createPendingPosition(UserConfig config, Signal signal, int quantity, EntrySource entrySource) {
         Position position = Position.builder()
                 .user(config.getUser())
                 .signal(signal)
                 .symbol(signal.getSymbol())
                 .quantity(quantity)
                 .status(PositionStatus.PENDING_ENTRY)
+                .entrySource(entrySource)
                 .build();
         return positionRepository.save(position).getId();
     }
@@ -101,6 +107,30 @@ public class PortfolioDbService {
 
         position.setEntryOrderId(zerodhaOrderId);
         positionRepository.save(position);
+    }
+
+    /**
+     * Records the entry Order for a manually-recorded fill: no Zerodha order_id (the user placed
+     * it directly in Zerodha, outside our broker integration), priced at the user-asserted avgPrice
+     * rather than the signal's entry price.
+     */
+    @Transactional
+    public void recordManualEntryOrder(Long positionId, UserConfig config, Signal signal,
+                                       int quantity, BigDecimal avgPrice) {
+        Position position = positionRepository.findById(positionId).orElseThrow();
+
+        Order order = Order.builder()
+                .user(config.getUser())
+                .position(position)
+                .zerodhaOrderId(null)
+                .type(OrderType.ENTRY)
+                .orderKind(OrderKind.MANUAL)
+                .symbol(signal.getSymbol())
+                .quantity(quantity)
+                .price(avgPrice)
+                .status(OrderStatus.PENDING)
+                .build();
+        orderRepository.save(order);
     }
 
     @Transactional

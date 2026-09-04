@@ -180,6 +180,98 @@ class PortfolioControllerTest {
                 .andExpect(status().isForbidden());
     }
 
+    // ── POST /api/portfolio/signals/{signalId}/manual-order ────────────────────
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/signals/{signalId}/manual-order records the trade and returns the position")
+    void recordManualOrder_validRequest_returns200() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(com.trading.users.UserConfig.builder().build()));
+        when(engine.recordManualOrder(any(), eq(1L), eq(4), eq(new BigDecimal("2410.00")))).thenReturn(20L);
+
+        Position activated = buildPosition();
+        activated.setId(20L);
+        activated.setQuantity(4);
+        activated.setAvgEntryPrice(new BigDecimal("2410.00"));
+        activated.setEntrySource(com.trading.signals.EntrySource.MANUAL);
+        when(db.getPositionById(20L)).thenReturn(Optional.of(activated));
+
+        mockMvc.perform(post("/api/portfolio/signals/1/manual-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":4,\"avgPrice\":2410.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.entrySource").value("MANUAL"))
+                .andExpect(jsonPath("$.quantity").value(4));
+
+        verify(engine).recordManualOrder(any(), eq(1L), eq(4), eq(new BigDecimal("2410.00")));
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/signals/{signalId}/manual-order rejects non-positive quantity")
+    void recordManualOrder_invalidQuantity_returns400() throws Exception {
+        mockMvc.perform(post("/api/portfolio/signals/1/manual-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":0,\"avgPrice\":2410.00}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).recordManualOrder(any(), any(), anyInt(), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/portfolio/signals/{signalId}/manual-order requires authentication")
+    void recordManualOrder_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(post("/api/portfolio/signals/1/manual-order")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":4,\"avgPrice\":2410.00}"))
+                .andExpect(status().isForbidden());
+    }
+
+    // ── POST /api/portfolio/manual-orders (freeform) ────────────────────────────
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/manual-orders creates the signal and records the trade")
+    void recordManualOrderForNewSignal_validRequest_returns200() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(com.trading.users.UserConfig.builder().build()));
+        when(engine.recordManualOrderForNewSignal(any(), any(), eq(2), eq(new BigDecimal("3800.00"))))
+                .thenReturn(21L);
+
+        Position activated = buildPosition();
+        activated.setId(21L);
+        activated.setSymbol("TCS");
+        activated.setQuantity(2);
+        activated.setAvgEntryPrice(new BigDecimal("3800.00"));
+        activated.setEntrySource(com.trading.signals.EntrySource.MANUAL);
+        when(db.getPositionById(21L)).thenReturn(Optional.of(activated));
+
+        String body = "{\"signal\":{\"symbol\":\"TCS\",\"entryPrice\":3800,\"stopLoss\":3700,"
+                + "\"target\":4100,\"closingBasis\":\"DAILY\"},\"quantity\":2,\"avgPrice\":3800.00}";
+
+        mockMvc.perform(post("/api/portfolio/manual-orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.symbol").value("TCS"))
+                .andExpect(jsonPath("$.entrySource").value("MANUAL"));
+
+        verify(engine).recordManualOrderForNewSignal(any(), any(), eq(2), eq(new BigDecimal("3800.00")));
+    }
+
+    @Test
+    @DisplayName("POST /api/portfolio/manual-orders requires authentication")
+    void recordManualOrderForNewSignal_unauthenticated_returns403() throws Exception {
+        String body = "{\"signal\":{\"symbol\":\"TCS\",\"entryPrice\":3800,\"stopLoss\":3700,"
+                + "\"target\":4100,\"closingBasis\":\"DAILY\"},\"quantity\":2,\"avgPrice\":3800.00}";
+
+        mockMvc.perform(post("/api/portfolio/manual-orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(body))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     @WithMockUser(username = "user@example.com")
     @DisplayName("GET /api/portfolio/orders returns orders for user")

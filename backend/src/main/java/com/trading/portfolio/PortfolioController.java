@@ -4,6 +4,7 @@ import com.trading.broker.BrokerAdapter;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
 import com.trading.portfolio.dto.ConfirmFillRequest;
+import com.trading.portfolio.dto.CreateManualOrderRequest;
 import com.trading.portfolio.dto.LivePositionResponse;
 import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.dto.OrderResponse;
@@ -214,6 +215,48 @@ public class PortfolioController {
                 .orElseThrow(() -> new IllegalStateException("User config not found"));
 
         Long positionId = engine.placeOrderForSignal(config, signalId);
+        Position pos = db.getPositionById(positionId)
+                .orElseThrow(() -> new IllegalStateException("Position not found after creation"));
+        return ResponseEntity.ok(PositionResponse.from(pos));
+    }
+
+    /**
+     * POST /api/portfolio/signals/{signalId}/manual-order
+     * Records a trade the caller already placed and had filled directly in Zerodha (outside this app) —
+     * no order is placed here. The caller asserts the actual fill quantity/price; this app only starts
+     * tracking the position from that point on (GTT target, closing-basis SL monitoring, exits).
+     */
+    @PostMapping("/signals/{signalId}/manual-order")
+    public ResponseEntity<PositionResponse> recordManualOrder(
+            @PathVariable Long signalId,
+            @RequestBody @Valid ConfirmFillRequest req,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+        UserConfig config = db.getUserConfigByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("User config not found"));
+
+        Long positionId = engine.recordManualOrder(config, signalId, req.quantity(), req.avgPrice());
+        Position pos = db.getPositionById(positionId)
+                .orElseThrow(() -> new IllegalStateException("Position not found after creation"));
+        return ResponseEntity.ok(PositionResponse.from(pos));
+    }
+
+    /**
+     * POST /api/portfolio/manual-orders
+     * Same as {@link #recordManualOrder}, for a trade with no pre-existing tracked signal: creates a
+     * manual signal and records the fill against it in one call.
+     */
+    @PostMapping("/manual-orders")
+    public ResponseEntity<PositionResponse> recordManualOrderForNewSignal(
+            @RequestBody @Valid CreateManualOrderRequest req,
+            Authentication auth) {
+
+        Long userId = resolveUserId(auth);
+        UserConfig config = db.getUserConfigByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("User config not found"));
+
+        Long positionId = engine.recordManualOrderForNewSignal(config, req.signal(), req.quantity(), req.avgPrice());
         Position pos = db.getPositionById(positionId)
                 .orElseThrow(() -> new IllegalStateException("Position not found after creation"));
         return ResponseEntity.ok(PositionResponse.from(pos));
