@@ -12,53 +12,15 @@ class GoogleFinancePriceServiceTest {
     private final GoogleFinancePriceService service = new GoogleFinancePriceService();
 
     /**
-     * Builds minimal HTML that satisfies the CSS selector path used by GoogleFinancePriceService.
-     * Selector: body > c-wiz:nth-of-type(3) > div > div > div > div:nth-of-type(2) >
-     *           div:nth-of-type(2) > div > div > c-wiz > div > div:nth-of-type(3) >
-     *           c-wiz > div > div > div:nth-of-type(1) > div > div:nth-of-type(2) >
-     *           div > div:nth-of-type(1) > div:nth-of-type(1) > span > span
+     * Builds minimal HTML that satisfies the CSS selector used by GoogleFinancePriceService.
+     * Selector: div.N6SYTe span[jsname=Pdsbrc]
      */
     private static String buildHtml(String priceText) {
         return """
                 <html><body>
-                  <c-wiz></c-wiz>
-                  <c-wiz></c-wiz>
-                  <c-wiz>
-                    <div><div><div>
-                      <div></div>
-                      <div>
-                        <div></div>
-                        <div>
-                          <div><div>
-                            <c-wiz>
-                              <div>
-                                <div></div>
-                                <div></div>
-                                <div>
-                                  <c-wiz>
-                                    <div><div>
-                                      <div>
-                                        <div>
-                                          <div></div>
-                                          <div>
-                                            <div>
-                                              <div>
-                                                <div><span><span>%s</span></span></div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-                                      </div>
-                                    </div></div>
-                                  </c-wiz>
-                                </div>
-                              </div>
-                            </c-wiz>
-                          </div></div>
-                        </div>
-                      </div>
-                    </div></div></div>
-                  </c-wiz>
+                  <div class="ujg0He">
+                    <div class="N6SYTe"><span jsname="Pdsbrc"><span>%s</span></span></div>
+                  </div>
                 </body></html>
                 """.formatted(priceText);
     }

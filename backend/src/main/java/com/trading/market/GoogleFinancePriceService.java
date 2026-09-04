@@ -31,10 +31,9 @@ import java.util.concurrent.Executors;
 public class GoogleFinancePriceService {
 
     private static final String QUOTE_URL = "https://www.google.com/finance/quote/%s:NSE";
-    // CSS selector derived from the browser XPath for the LTP span on Google Finance.
-    // XPath: /html/body/c-wiz[3]/div/div/div/div[2]/div[2]/div/div/c-wiz/div/div[3]/c-wiz/div/div/div[1]/div/div[2]/div/div[1]/div[1]/span/span
-    private static final String PRICE_SELECTOR =
-            "body > c-wiz:nth-of-type(3) > div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div > div > c-wiz > div > div:nth-of-type(3) > c-wiz > div > div > div:nth-of-type(1) > div > div:nth-of-type(2) > div > div:nth-of-type(1) > div:nth-of-type(1) > span > span";
+    // Google Finance moved to a new "beta" layout (Sept 2026); the price sits in a
+    // span[jsname=Pdsbrc] inside the headline price div (class N6SYTe).
+    private static final String PRICE_SELECTOR = "div.N6SYTe span[jsname=Pdsbrc]";
     private static final String USER_AGENT =
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
