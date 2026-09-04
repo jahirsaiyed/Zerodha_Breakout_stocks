@@ -455,6 +455,23 @@ class PortfolioEngineTest {
         verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_SL), any());
     }
 
+    @Test
+    @DisplayName("checkClosingBasisStopLoss skips SL check (not the whole user) when quotes fetch is permission-denied")
+    void checkClosingBasisStopLoss_quotesPermissionDenied_skipsSlCheckOnly() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositionsByBasis(StopLossBasis.DAILY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), anyString());
+        verify(db, never()).closePosition(any(), any(), any());
+    }
+
     // ── previewOrderForSignal ─────────────────────────────────────────────────
 
     @Test
@@ -694,6 +711,27 @@ class PortfolioEngineTest {
         OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
 
         // Network failure on LTP fetch must not block the preview
+        assertThat(preview.canPlace()).isTrue();
+        assertThat(preview.warning()).isNull();
+    }
+
+    @Test
+    @DisplayName("previewOrder skips warning gracefully when LTP fetch is denied by broker (permission error)")
+    void previewOrder_ltpFetchPermissionDenied_canPlaceTrueNoWarning() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        UserConfig connected = connectedConfig();
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(connected)).thenReturn(broker);
+        when(broker.getAvailableMargin()).thenReturn(BigDecimal.valueOf(100_000));
+        when(broker.getQuotes(any())).thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+        when(sizingService.calculate(any(), any(), any(), any())).thenReturn(4);
+
+        OrderPreviewResponse preview = engine.previewOrderForSignal(connected, 1L);
+
+        // A Zerodha PermissionException on the LTP fetch must not fail the whole preview with a 401
         assertThat(preview.canPlace()).isTrue();
         assertThat(preview.warning()).isNull();
     }

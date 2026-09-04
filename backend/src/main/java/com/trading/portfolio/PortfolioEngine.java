@@ -229,6 +229,8 @@ public class PortfolioEngine {
                         + ". A limit order at ₹" + signal.getEntryPrice().toPlainString()
                         + " will only fill if price drops back to the entry level.";
             }
+        } catch (BrokerTokenException e) {
+            log.warn("[PREVIEW] quotes unavailable (permission denied) for {} — skipping entry warning", signal.getSymbol());
         } catch (BrokerNetworkException e) {
             log.warn("[PREVIEW] could not fetch LTP for {} to validate entry: {}", signal.getSymbol(), e.getMessage());
         }
@@ -516,6 +518,9 @@ public class PortfolioEngine {
                                                      Long userId, String tag) {
         try {
             return broker.getQuotes(symbols);
+        } catch (BrokerTokenException e) {
+            log.warn("[SL-{}] user={} quotes unavailable (permission denied) — skipping SL check", tag, userId);
+            return Map.of();
         } catch (BrokerNetworkException e) {
             log.warn("[SL-{}] user={} quotes fetch failed: {} — skipping SL check", tag, userId, e.getMessage());
             return Map.of();
