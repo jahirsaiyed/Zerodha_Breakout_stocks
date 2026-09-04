@@ -10,7 +10,7 @@ type Tab = 'ACTIVE' | 'PENDING_ENTRY'
 const BASIS_OPTIONS: StopLossBasis[] = ['DAILY', 'HOURLY', 'WEEKLY']
 
 const EMPTY_MANUAL_TRADE = {
-  symbol: '', entryPrice: '', stopLoss: '', target: '', closingBasis: 'DAILY' as StopLossBasis,
+  symbol: '', stopLoss: '', target: '', closingBasis: 'DAILY' as StopLossBasis,
   quantity: '', avgPrice: '',
 }
 
@@ -131,7 +131,8 @@ function RecordManualTradeModal({ onClose, onSuccess }: RecordManualTradeModalPr
     mutationFn: () => api.post('/portfolio/manual-orders', {
       signal: {
         symbol: form.symbol.toUpperCase().trim(),
-        entryPrice: Number(form.entryPrice),
+        // No separate "intended" entry for a freeform manual trade — the actual fill price IS the entry.
+        entryPrice: Number(form.avgPrice),
         stopLoss: Number(form.stopLoss),
         target: Number(form.target),
         closingBasis: form.closingBasis,
