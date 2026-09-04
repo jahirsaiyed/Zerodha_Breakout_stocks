@@ -4,6 +4,8 @@ import com.trading.broker.*;
 import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.events.*;
 import com.trading.signals.*;
+import com.trading.signals.dto.CreateSignalRequest;
+import com.trading.signals.dto.SignalResponse;
 import com.trading.users.UserConfig;
 import com.trading.signals.StopLossBasis;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +43,7 @@ public class PortfolioEngine {
     private final SignalScoringService scoringService;
     private final PositionSizingService sizingService;
     private final ApplicationEventPublisher events;
+    private final SignalService signalService;
 
     // ── Core loop ────────────────────────────────────────────────────────────
 
@@ -253,6 +256,30 @@ public class PortfolioEngine {
      * Returns the newly created position ID.
      */
     public Long placeOrderForSignal(UserConfig config, Long signalId) {
+        Signal signal = validateEntryGuardrails(config, signalId);
+
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        BigDecimal margin;
+        try {
+            margin = broker.getAvailableMargin();
+        } catch (BrokerNetworkException e) {
+            throw new IllegalStateException("Could not fetch available margin: " + e.getMessage());
+        }
+
+        Long positionId = placeEntryOrder(config, broker, signal, margin);
+        if (positionId == null) {
+            throw new IllegalStateException("Order was not placed — insufficient margin or duplicate position");
+        }
+        return positionId;
+    }
+
+    /**
+     * Shared entry guardrails for both automated ({@link #placeOrderForSignal}) and manually-recorded
+     * ({@link #recordManualOrder}) entries: trading not paused, signal ACTIVE, no duplicate position
+     * for this signal, symbol not already held, and a free position slot available.
+     */
+    private Signal validateEntryGuardrails(UserConfig config, Long signalId) {
         Long userId = config.getUser().getId();
 
         if (Boolean.TRUE.equals(config.getTradingPaused())) {
@@ -275,21 +302,52 @@ public class PortfolioEngine {
         if (occupied >= config.getMaxPositions()) {
             throw new IllegalStateException("No free position slots (max " + config.getMaxPositions() + ")");
         }
+        return signal;
+    }
 
+    // ── Manual order recording ──────────────────────────────────────────────
+
+    /**
+     * Records a fill the user already executed manually in Zerodha (outside our broker integration) —
+     * no order is placed. Applies the same guardrails as {@link #placeOrderForSignal} so a manual entry
+     * can't bypass max-positions/duplicate-symbol/trading-paused invariants, then reuses {@link #handleFill}
+     * to place the GTT target and activate the position exactly like an automated fill.
+     */
+    public Long recordManualOrder(UserConfig config, Long signalId, int quantity, BigDecimal avgPrice) {
+        Signal signal = validateEntryGuardrails(config, signalId);
         BrokerAdapter broker = brokerAdapterFactory.forUser(config);
 
-        BigDecimal margin;
-        try {
-            margin = broker.getAvailableMargin();
-        } catch (BrokerNetworkException e) {
-            throw new IllegalStateException("Could not fetch available margin: " + e.getMessage());
-        }
+        Long positionId = db.createPendingPosition(config, signal, quantity, EntrySource.MANUAL);
+        db.recordManualEntryOrder(positionId, config, signal, quantity, avgPrice);
+        Position pos = db.getPositionById(positionId).orElseThrow();
 
-        Long positionId = placeEntryOrder(config, broker, signal, margin);
-        if (positionId == null) {
-            throw new IllegalStateException("Order was not placed — insufficient margin or duplicate position");
-        }
+        log.info("[MANUAL-ENTRY] recording pos={} symbol={} qty={} avgPrice={}",
+                positionId, signal.getSymbol(), quantity, avgPrice);
+        handleFill(config, broker, pos, new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, quantity, avgPrice));
+
         return positionId;
+    }
+
+    /**
+     * Same as {@link #recordManualOrder}, for a trade with no pre-existing tracked signal: creates a
+     * MANUAL {@link Signal} first, then records the fill against it. If recording fails after the signal
+     * was created, the signal is cancelled rather than left ACTIVE and unowned, where the next core-loop
+     * cycle could otherwise pick it up and place a real order for it.
+     */
+    public Long recordManualOrderForNewSignal(UserConfig config, CreateSignalRequest signalRequest,
+                                              int quantity, BigDecimal avgPrice) {
+        SignalResponse created = signalService.create(signalRequest);
+        try {
+            return recordManualOrder(config, created.id(), quantity, avgPrice);
+        } catch (RuntimeException e) {
+            try {
+                signalService.cancel(created.id());
+            } catch (RuntimeException cleanupError) {
+                log.warn("[MANUAL-ENTRY] could not auto-cancel signal {} after failed recording: {}",
+                        created.id(), cleanupError.getMessage());
+            }
+            throw e;
+        }
     }
 
     private OrderPreviewResponse blocked(Signal signal, int slots, BigDecimal margin, String reason) {

@@ -4,6 +4,8 @@ import com.trading.broker.*;
 import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.signals.*;
 import com.trading.signals.StopLossBasis;
+import com.trading.signals.dto.CreateSignalRequest;
+import com.trading.signals.dto.SignalResponse;
 import com.trading.users.PositionSizingMethod;
 import com.trading.users.User;
 import com.trading.users.UserConfig;
@@ -38,6 +40,7 @@ class PortfolioEngineTest {
     @Mock private PositionSizingService sizingService;
     @Mock private ApplicationEventPublisher events;
     @Mock private BrokerAdapter broker;
+    @Mock private SignalService signalService;
 
     @InjectMocks
     private PortfolioEngine engine;
@@ -922,6 +925,129 @@ class PortfolioEngineTest {
         assertThat(positionId).isEqualTo(21L);
         verify(broker).placeLimitOrder(eq("EXAMPLE"), eq(5), any(BigDecimal.class), eq("pos_21"));
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderPlacedEvent.class));
+    }
+
+    // ── recordManualOrder ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("recordManualOrder throws when trading is paused")
+    void recordManualOrder_tradingPaused_throws() {
+        UserConfig paused = UserConfig.builder()
+                .user(user).maxPositions(5)
+                .positionSizingMethod(PositionSizingMethod.FIXED)
+                .positionSizingValue(BigDecimal.valueOf(10_000))
+                .orderExpiryDays(5)
+                .tradingPaused(true)
+                .build();
+
+        assertThatThrownBy(() -> engine.recordManualOrder(paused, 1L, 4, BigDecimal.valueOf(2410)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("paused");
+    }
+
+    @Test
+    @DisplayName("recordManualOrder throws when user already has a position for this signal")
+    void recordManualOrder_duplicatePosition_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(true);
+
+        assertThatThrownBy(() -> engine.recordManualOrder(userConfig, 1L, 4, BigDecimal.valueOf(2410)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("already");
+    }
+
+    @Test
+    @DisplayName("recordManualOrder throws when no free position slots remain")
+    void recordManualOrder_noFreeSlots_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(5L); // maxPositions=5
+
+        assertThatThrownBy(() -> engine.recordManualOrder(userConfig, 1L, 4, BigDecimal.valueOf(2410)))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("slot");
+    }
+
+    @Test
+    @DisplayName("recordManualOrder creates a MANUAL-source position, records the entry order, activates it and places GTT")
+    void recordManualOrder_happyPath_createsAndActivatesManualPosition() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildPosition(20L, user, "RELIANCE", null);
+        pos.setSignal(signal);
+
+        when(db.getSignalById(1L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 1L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(db.createPendingPosition(userConfig, signal, 4, EntrySource.MANUAL)).thenReturn(20L);
+        when(db.getPositionById(20L)).thenReturn(Optional.of(pos));
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT789");
+
+        Long positionId = engine.recordManualOrder(userConfig, 1L, 4, BigDecimal.valueOf(2410));
+
+        assertThat(positionId).isEqualTo(20L);
+        verify(db).createPendingPosition(userConfig, signal, 4, EntrySource.MANUAL);
+        verify(db).recordManualEntryOrder(20L, userConfig, signal, 4, BigDecimal.valueOf(2410));
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(2), any(BigDecimal.class), eq("pos_20"));
+        verify(db).activatePosition(20L, 4, BigDecimal.valueOf(2410), "GTT789");
+        verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
+        // No broker order is ever placed for a manually-recorded entry
+        verify(broker, never()).placeLimitOrder(anyString(), anyInt(), any(), anyString());
+    }
+
+    // ── recordManualOrderForNewSignal ────────────────────────────────────────
+
+    @Test
+    @DisplayName("recordManualOrderForNewSignal creates a MANUAL signal then records the fill against it")
+    void recordManualOrderForNewSignal_happyPath_createsSignalThenRecords() {
+        Signal signal = buildSignal(2L, "TCS", 3800, 3700, 4100);
+        Position pos = buildPosition(21L, user, "TCS", null);
+        pos.setSignal(signal);
+
+        CreateSignalRequest req = new CreateSignalRequest(
+                "TCS", BigDecimal.valueOf(3800), BigDecimal.valueOf(3700), BigDecimal.valueOf(4100),
+                StopLossBasis.DAILY, "manual trade");
+        SignalResponse created = SignalResponse.from(signal);
+
+        when(signalService.create(req)).thenReturn(created);
+        when(db.getSignalById(2L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 2L)).thenReturn(false);
+        when(db.getOccupiedSymbols(1L)).thenReturn(Set.of());
+        when(db.countActivePositions(1L)).thenReturn(0L);
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(db.createPendingPosition(userConfig, signal, 2, EntrySource.MANUAL)).thenReturn(21L);
+        when(db.getPositionById(21L)).thenReturn(Optional.of(pos));
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT999");
+
+        Long positionId = engine.recordManualOrderForNewSignal(userConfig, req, 2, BigDecimal.valueOf(3800));
+
+        assertThat(positionId).isEqualTo(21L);
+        verify(signalService).create(req);
+        verify(signalService, never()).cancel(anyLong());
+        verify(db).activatePosition(21L, 2, BigDecimal.valueOf(3800), "GTT999");
+    }
+
+    @Test
+    @DisplayName("recordManualOrderForNewSignal cancels the just-created signal when recording fails")
+    void recordManualOrderForNewSignal_recordingFails_cancelsCreatedSignal() {
+        Signal signal = buildSignal(2L, "TCS", 3800, 3700, 4100);
+        CreateSignalRequest req = new CreateSignalRequest(
+                "TCS", BigDecimal.valueOf(3800), BigDecimal.valueOf(3700), BigDecimal.valueOf(4100),
+                StopLossBasis.DAILY, null);
+        SignalResponse created = SignalResponse.from(signal);
+
+        when(signalService.create(req)).thenReturn(created);
+        when(db.getSignalById(2L)).thenReturn(Optional.of(signal));
+        when(db.hasActivePosition(1L, 2L)).thenReturn(true); // forces recordManualOrder to throw
+
+        assertThatThrownBy(() -> engine.recordManualOrderForNewSignal(userConfig, req, 2, BigDecimal.valueOf(3800)))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(signalService).cancel(2L);
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────

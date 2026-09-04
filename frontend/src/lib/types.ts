@@ -31,6 +31,7 @@ export interface Position {
   entryOrderId: string | null
   gttOrderId: string | null
   status: 'PENDING_ENTRY' | 'ACTIVE' | 'CANCELLED' | 'CLOSED_TARGET' | 'CLOSED_SL' | 'CLOSED_MANUAL'
+  entrySource: 'AUTO' | 'MANUAL'
   openedAt: string | null
   closedAt: string | null
   realisedPnl: number | null
@@ -91,7 +92,7 @@ export interface Order {
   id: number
   symbol: string
   type: 'ENTRY' | 'EXIT_TARGET' | 'EXIT_SL' | 'EXIT_MANUAL'
-  orderKind: 'LIMIT' | 'GTT' | string
+  orderKind: 'LIMIT' | 'GTT' | 'MANUAL' | string
   quantity: number
   price: number | null
   status: 'PENDING' | 'FILLED' | 'CANCELLED' | 'REJECTED'

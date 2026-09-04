@@ -46,6 +46,11 @@ public class Position {
     @Column(nullable = false)
     private PositionStatus status = PositionStatus.PENDING_ENTRY;
 
+    @Builder.Default
+    @Enumerated(EnumType.STRING)
+    @Column(name = "entry_source", nullable = false)
+    private EntrySource entrySource = EntrySource.AUTO;
+
     @Column(name = "opened_at")
     private LocalDateTime openedAt;
 

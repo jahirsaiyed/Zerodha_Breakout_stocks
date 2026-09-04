@@ -1,5 +1,6 @@
 package com.trading.portfolio.dto;
 
+import com.trading.signals.EntrySource;
 import com.trading.signals.Position;
 import com.trading.signals.PositionStatus;
 
@@ -14,6 +15,7 @@ public record PositionResponse(
         String entryOrderId,
         String gttOrderId,
         PositionStatus status,
+        EntrySource entrySource,
         LocalDateTime openedAt,
         LocalDateTime closedAt,
         BigDecimal realisedPnl,
@@ -33,6 +35,7 @@ public record PositionResponse(
                 pos.getEntryOrderId(),
                 pos.getGttOrderId(),
                 pos.getStatus(),
+                pos.getEntrySource(),
                 pos.getOpenedAt(),
                 pos.getClosedAt(),
                 pos.getRealisedPnl(),
