@@ -385,6 +385,273 @@ class PortfolioEngineTest {
                 .hasMessageContaining("99");
     }
 
+    // ── addQuantity / removeQuantity ────────────────────────────────────────
+
+    @Test
+    @DisplayName("addQuantity places a live market buy, confirms the actual fill, weighted-averages the entry price, and recalculates the target GTT")
+    void addQuantity_liveOrder_weightedAveragesAndRecalculatesGtt() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600); // target=2600
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+        pos.setGttQuantity(2);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketBuyOrder("RELIANCE", 2, "pos_10_add")).thenReturn("ORDBUY1");
+        when(broker.getOrderDetail("ORDBUY1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 2, BigDecimal.valueOf(120)));
+        when(broker.placeGttTargetOrder(eq("RELIANCE"), eq(3), any(BigDecimal.class), eq("pos_10"))).thenReturn("GTT2");
+
+        engine.addQuantity(10L, 2);
+
+        verify(broker).placeMarketBuyOrder("RELIANCE", 2, "pos_10_add");
+        verify(db).recordAddOrder(10L, userConfig, "ORDBUY1", 2, BigDecimal.valueOf(120), OrderKind.MARKET);
+        verify(broker).cancelGttOrder("GTT1");
+        // newQty = 4+2=6, bookQty = 50% of 6 = 3; newAvgPrice = (4*100 + 2*120)/6 = 106.6667
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(3), any(BigDecimal.class), eq("pos_10"));
+        verify(db).adjustPositionQuantity(eq(10L), eq(4), eq(6), eq(BigDecimal.valueOf(106.6667)), eq("GTT2"), eq(3));
+    }
+
+    @Test
+    @DisplayName("addQuantity throws and places no order when trading is paused")
+    void addQuantity_tradingPaused_throwsAndPlacesNoOrder() {
+        userConfig.setTradingPaused(true);
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+
+        assertThatThrownBy(() -> engine.addQuantity(10L, 2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("paused");
+
+        verify(broker, never()).placeMarketBuyOrder(anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("addQuantity throws and makes no DB changes when the broker rejects the order")
+    void addQuantity_orderRejected_throwsAndMakesNoChanges() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketBuyOrder("RELIANCE", 2, "pos_10_add")).thenReturn("ORDBUY1");
+        when(broker.getOrderDetail("ORDBUY1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.REJECTED, 0, BigDecimal.ZERO));
+
+        assertThatThrownBy(() -> engine.addQuantity(10L, 2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not filled");
+
+        verify(db, never()).recordAddOrder(any(), any(), any(), anyInt(), any(), any());
+        verify(db, never()).adjustPositionQuantity(any(), anyInt(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("addQuantity throws after polling when the order never confirms as filled")
+    void addQuantity_orderNeverConfirmsFilled_throwsAfterPolling() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketBuyOrder("RELIANCE", 2, "pos_10_add")).thenReturn("ORDBUY1");
+        when(broker.getOrderDetail("ORDBUY1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.PENDING, 0, BigDecimal.ZERO));
+
+        assertThatThrownBy(() -> engine.addQuantity(10L, 2))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("has not confirmed");
+
+        verify(broker, times(3)).getOrderDetail("ORDBUY1"); // exhausts the poll budget
+        verify(db, never()).adjustPositionQuantity(any(), anyInt(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("recordAddQuantity records a manual fill without placing a broker order, still recalculates GTT")
+    void recordAddQuantity_manual_noBrokerBuyCall_stillRecalculatesGtt() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+        pos.setGttQuantity(2);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeGttTargetOrder(eq("RELIANCE"), eq(3), any(BigDecimal.class), eq("pos_10"))).thenReturn("GTT2");
+
+        engine.recordAddQuantity(10L, 2, BigDecimal.valueOf(120));
+
+        verify(broker, never()).placeMarketBuyOrder(anyString(), anyInt(), anyString());
+        verify(broker, never()).getOrderDetail(anyString());
+        verify(db).recordAddOrder(10L, userConfig, null, 2, BigDecimal.valueOf(120), OrderKind.MANUAL);
+        verify(db).adjustPositionQuantity(eq(10L), eq(4), eq(6), eq(BigDecimal.valueOf(106.6667)), eq("GTT2"), eq(3));
+    }
+
+    @Test
+    @DisplayName("removeQuantity places a live market sell, confirms the actual fill, keeps avgEntryPrice, and recalculates the target GTT")
+    void removeQuantity_liveOrder_keepsAvgPriceAndRecalculatesGtt() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+        pos.setGttQuantity(2);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder("RELIANCE", 1, "pos_10_remove")).thenReturn("ORDSELL1");
+        when(broker.getOrderDetail("ORDSELL1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 1, BigDecimal.valueOf(2605)));
+        when(broker.placeGttTargetOrder(eq("RELIANCE"), eq(2), any(BigDecimal.class), eq("pos_10"))).thenReturn("GTT2");
+
+        engine.removeQuantity(10L, 1);
+
+        verify(broker).placeMarketSellOrder("RELIANCE", 1, "pos_10_remove");
+        verify(db).recordRemoveOrder(10L, userConfig, "ORDSELL1", 1, BigDecimal.valueOf(2605), OrderKind.MARKET);
+        verify(broker).cancelGttOrder("GTT1");
+        // newQty = 4-1=3, bookQty = round(50% of 3) = 2 (HALF_UP)
+        verify(db).adjustPositionQuantity(10L, 4, 3, BigDecimal.valueOf(100), "GTT2", 2);
+    }
+
+    @Test
+    @DisplayName("removeQuantity rejects removing the entire remaining quantity")
+    void removeQuantity_entireQuantity_rejected() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+
+        assertThatThrownBy(() -> engine.removeQuantity(10L, 4))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Close");
+
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), anyString());
+    }
+
+    @Test
+    @DisplayName("removeQuantity throws and makes no DB changes when the broker rejects the order")
+    void removeQuantity_orderRejected_throwsAndMakesNoChanges() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder("RELIANCE", 1, "pos_10_remove")).thenReturn("ORDSELL1");
+        when(broker.getOrderDetail("ORDSELL1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.REJECTED, 0, BigDecimal.ZERO));
+
+        assertThatThrownBy(() -> engine.removeQuantity(10L, 1))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("not filled");
+
+        verify(db, never()).recordRemoveOrder(any(), any(), any(), anyInt(), any(), any());
+        verify(db, never()).adjustPositionQuantity(any(), anyInt(), anyInt(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("removeQuantity leaves the position without a GTT when there wasn't one to begin with")
+    void removeQuantity_noExistingGtt_leavesGttNull() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, null, BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder("RELIANCE", 1, "pos_10_remove")).thenReturn("ORDSELL1");
+        when(broker.getOrderDetail("ORDSELL1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 1, BigDecimal.valueOf(2605)));
+
+        engine.removeQuantity(10L, 1);
+
+        verify(broker, never()).cancelGttOrder(anyString());
+        verify(broker, never()).placeGttTargetOrder(anyString(), anyInt(), any(), anyString());
+        verify(db).adjustPositionQuantity(10L, 4, 3, BigDecimal.valueOf(100), null, null);
+    }
+
+    @Test
+    @DisplayName("removeQuantity leaves the position without a GTT when re-placement fails")
+    void removeQuantity_gttReplacementFails_leavesPositionWithoutGtt() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+        pos.setGttQuantity(2);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder("RELIANCE", 1, "pos_10_remove")).thenReturn("ORDSELL1");
+        when(broker.getOrderDetail("ORDSELL1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 1, BigDecimal.valueOf(2605)));
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString()))
+                .thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+
+        engine.removeQuantity(10L, 1);
+
+        verify(db).adjustPositionQuantity(10L, 4, 3, BigDecimal.valueOf(100), null, null);
+    }
+
+    @Test
+    @DisplayName("removeQuantity does not place a replacement GTT when cancelling the old one fails, to avoid a duplicate trigger")
+    void removeQuantity_gttCancelFails_doesNotPlaceReplacementGtt() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT1", BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+        pos.setGttQuantity(2);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.placeMarketSellOrder("RELIANCE", 1, "pos_10_remove")).thenReturn("ORDSELL1");
+        when(broker.getOrderDetail("ORDSELL1"))
+                .thenReturn(new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 1, BigDecimal.valueOf(2605)));
+        doThrow(new RuntimeException("network blip")).when(broker).cancelGttOrder("GTT1");
+
+        engine.removeQuantity(10L, 1);
+
+        // Cancellation failed — the old GTT (sized for the OLD qty=4) may still be live on Zerodha,
+        // so no replacement is placed: two live GTTs on the same symbol/target could both trigger.
+        verify(broker, never()).placeGttTargetOrder(anyString(), anyInt(), any(), anyString());
+        verify(db).adjustPositionQuantity(10L, 4, 3, BigDecimal.valueOf(100), "GTT1", 2);
+    }
+
+    @Test
+    @DisplayName("recordRemoveQuantity records a manual sale without placing a broker order")
+    void recordRemoveQuantity_manual_noBrokerSellCall() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, null, BigDecimal.valueOf(100));
+        pos.setQuantity(4);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+
+        engine.recordRemoveQuantity(10L, 1, BigDecimal.valueOf(2610));
+
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), anyString());
+        verify(broker, never()).getOrderDetail(anyString());
+        verify(db).recordRemoveOrder(10L, userConfig, null, 1, BigDecimal.valueOf(2610), OrderKind.MANUAL);
+        verify(db).adjustPositionQuantity(10L, 4, 3, BigDecimal.valueOf(100), null, null);
+    }
+
+    @Test
+    @DisplayName("addQuantity throws when position is not ACTIVE")
+    void addQuantity_positionNotActive_throws() {
+        when(db.getPositionById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> engine.addQuantity(10L, 2))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("10");
+    }
+
     // ── confirmManualFill ────────────────────────────────────────────────────
 
     @Test

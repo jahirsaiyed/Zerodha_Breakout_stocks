@@ -213,6 +213,80 @@ public class PortfolioDbService {
         orderRepository.save(order);
     }
 
+    /**
+     * Records an ADD order (buy more of an already-ACTIVE position). {@code kind} is MARKET for a
+     * live broker order (status PENDING, never later reconciled — mirrors {@link #recordManualExitOrder})
+     * or MANUAL for a trade the user already made directly in Zerodha (status FILLED immediately,
+     * since it's an already-done fact — mirrors {@link #recordManualEntryOrder}).
+     */
+    @Transactional
+    public void recordAddOrder(Long positionId, UserConfig config, String zerodhaOrderId,
+                               int quantity, BigDecimal price, OrderKind kind) {
+        Position position = positionRepository.findById(positionId).orElseThrow();
+        Order order = Order.builder()
+                .user(config.getUser())
+                .position(position)
+                .zerodhaOrderId(zerodhaOrderId)
+                .type(OrderType.ADD)
+                .orderKind(kind)
+                .symbol(position.getSymbol())
+                .quantity(quantity)
+                .price(price)
+                .status(kind == OrderKind.MANUAL ? OrderStatus.FILLED : OrderStatus.PENDING)
+                .build();
+        orderRepository.save(order);
+    }
+
+    /**
+     * Records a partial manual sell (reduces quantity without closing the position). Reuses
+     * {@link OrderType#EXIT_MANUAL} — a partial manual sell is the same category as a full manual
+     * exit, just for less than the full quantity.
+     */
+    @Transactional
+    public void recordRemoveOrder(Long positionId, UserConfig config, String zerodhaOrderId,
+                                  int quantity, BigDecimal price, OrderKind kind) {
+        Position position = positionRepository.findById(positionId).orElseThrow();
+        Order order = Order.builder()
+                .user(config.getUser())
+                .position(position)
+                .zerodhaOrderId(zerodhaOrderId)
+                .type(OrderType.EXIT_MANUAL)
+                .orderKind(kind)
+                .symbol(position.getSymbol())
+                .quantity(quantity)
+                .price(price)
+                .status(kind == OrderKind.MANUAL ? OrderStatus.FILLED : OrderStatus.PENDING)
+                .build();
+        orderRepository.save(order);
+    }
+
+    /**
+     * Applies a quantity change (add or remove) to an ACTIVE position via an atomic conditional
+     * update: the write only succeeds if the position's quantity still equals
+     * {@code expectedQuantity} — the value the caller (in {@link PortfolioEngine}) based its
+     * computation of {@code newQuantity}/{@code newAvgPrice} on. This guards against a lost
+     * update if the position was modified concurrently between that read and this write (e.g. a
+     * scheduler-triggered target/SL exit, or another add/remove call) — without it, this write
+     * would silently overwrite whatever the concurrent change did.
+     *
+     * <p>Throws if no row matched (position was modified concurrently, or doesn't exist). Note
+     * this runs after the caller has already placed any live broker order for a live add/remove —
+     * that order can't be undone, so a thrown exception here still needs human reconciliation via
+     * the Orders page, same as any other broker-call-succeeded-but-DB-write-failed case in this
+     * app (e.g. GTT re-placement failure).
+     */
+    @Transactional
+    public void adjustPositionQuantity(Long positionId, int expectedQuantity, int newQuantity,
+                                       BigDecimal newAvgPrice, String gttId, Integer gttQuantity) {
+        Integer normalizedGttQuantity = gttId != null ? gttQuantity : null;
+        int updated = positionRepository.updateQuantityIfUnchanged(
+                positionId, expectedQuantity, newQuantity, newAvgPrice, gttId, normalizedGttQuantity);
+        if (updated == 0) {
+            throw new IllegalStateException("Position " + positionId
+                    + " was modified concurrently — please refresh and try again.");
+        }
+    }
+
     @Transactional
     public void closePosition(Long positionId, PositionStatus closeStatus, BigDecimal realisedPnl) {
         Position position = positionRepository.findById(positionId).orElseThrow();

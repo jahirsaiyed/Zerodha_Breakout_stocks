@@ -763,4 +763,229 @@ public class PortfolioEngine {
                 PositionStatus.CLOSED_MANUAL, null));
         log.info("[MANUAL] DONE pos={} symbol={}", positionId, pos.getSymbol());
     }
+
+    // ── Quantity adjustment (add/remove on an existing ACTIVE position) ────────
+
+    /**
+     * Adds to an ACTIVE position by placing a live market buy order, then confirms the actual
+     * filled quantity and fill price with the broker (see {@link #awaitMarketFill}) before
+     * touching the position — those numbers become the new quantity and cost basis, so this
+     * never assumes the requested quantity landed or approximates the price from a quote.
+     */
+    public Long addQuantity(Long positionId, int addQty) {
+        Position pos = requireActivePosition(positionId);
+        UserConfig config = requireConfig(pos);
+        if (Boolean.TRUE.equals(config.getTradingPaused())) {
+            throw new IllegalStateException("Trading is paused — enable it in Settings");
+        }
+
+        log.info("[ADD-QTY] START pos={} symbol={} +{}", positionId, pos.getSymbol(), addQty);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        String tag = "pos_" + positionId + "_add";
+        String orderId = broker.placeMarketBuyOrder(pos.getSymbol(), addQty, tag);
+        BrokerOrderDetail detail = awaitMarketFill(broker, orderId, pos.getSymbol());
+        int filledQty = detail.filledQuantity() > 0 ? detail.filledQuantity() : addQty;
+        BigDecimal fillPrice = detail.avgPrice();
+
+        db.recordAddOrder(positionId, config, orderId, filledQty, fillPrice, OrderKind.MARKET);
+
+        int newQty = pos.getQuantity() + filledQty;
+        BigDecimal newAvgPrice = weightedAveragePrice(pos.getAvgEntryPrice(), pos.getQuantity(), fillPrice, filledQty);
+        applyQuantityChange(config, broker, pos, newQty, newAvgPrice);
+
+        log.info("[ADD-QTY] DONE pos={} symbol={} qty={} avgPrice={} order={}",
+                positionId, pos.getSymbol(), newQty, newAvgPrice, orderId);
+        return positionId;
+    }
+
+    /**
+     * Same as {@link #addQuantity}, for shares the user already bought directly in Zerodha —
+     * no broker order is placed; the asserted {@code avgPrice} is used for the weighted average.
+     */
+    public Long recordAddQuantity(Long positionId, int addQty, BigDecimal avgPrice) {
+        Position pos = requireActivePosition(positionId);
+        UserConfig config = requireConfig(pos);
+
+        log.info("[ADD-QTY] START (manual) pos={} symbol={} +{} avgPrice={}",
+                positionId, pos.getSymbol(), addQty, avgPrice);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config); // needed only for GTT recalculation
+
+        db.recordAddOrder(positionId, config, null, addQty, avgPrice, OrderKind.MANUAL);
+
+        int newQty = pos.getQuantity() + addQty;
+        BigDecimal newAvgPrice = weightedAveragePrice(pos.getAvgEntryPrice(), pos.getQuantity(), avgPrice, addQty);
+        applyQuantityChange(config, broker, pos, newQty, newAvgPrice);
+
+        log.info("[ADD-QTY] DONE (manual) pos={} symbol={} qty={} avgPrice={}",
+                positionId, pos.getSymbol(), newQty, newAvgPrice);
+        return positionId;
+    }
+
+    /**
+     * Removes part of an ACTIVE position by placing a live market sell order, then confirms the
+     * actual filled quantity with the broker (see {@link #awaitMarketFill}) before touching the
+     * position, rather than assuming the requested quantity sold. Rejects a removal that would
+     * leave nothing behind — use {@link #manualExit} to close the position entirely.
+     * avgEntryPrice is unaffected by a sell (cost basis of the remaining shares doesn't change).
+     */
+    public Long removeQuantity(Long positionId, int removeQty) {
+        Position pos = requireActivePosition(positionId);
+        validateRemovalQty(pos, removeQty);
+        UserConfig config = requireConfig(pos);
+
+        log.info("[REMOVE-QTY] START pos={} symbol={} -{}", positionId, pos.getSymbol(), removeQty);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        String tag = "pos_" + positionId + "_remove";
+        String orderId = broker.placeMarketSellOrder(pos.getSymbol(), removeQty, tag);
+        BrokerOrderDetail detail = awaitMarketFill(broker, orderId, pos.getSymbol());
+        int soldQty = detail.filledQuantity() > 0 ? detail.filledQuantity() : removeQty;
+
+        db.recordRemoveOrder(positionId, config, orderId, soldQty, detail.avgPrice(), OrderKind.MARKET);
+
+        int newQty = pos.getQuantity() - soldQty;
+        applyQuantityChange(config, broker, pos, newQty, pos.getAvgEntryPrice());
+
+        log.info("[REMOVE-QTY] DONE pos={} symbol={} qty={} order={}", positionId, pos.getSymbol(), newQty, orderId);
+        return positionId;
+    }
+
+    /**
+     * Same as {@link #removeQuantity}, for shares the user already sold directly in Zerodha —
+     * no broker order is placed.
+     */
+    public Long recordRemoveQuantity(Long positionId, int removeQty, BigDecimal salePrice) {
+        Position pos = requireActivePosition(positionId);
+        validateRemovalQty(pos, removeQty);
+        UserConfig config = requireConfig(pos);
+
+        log.info("[REMOVE-QTY] START (manual) pos={} symbol={} -{} salePrice={}",
+                positionId, pos.getSymbol(), removeQty, salePrice);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config); // needed only for GTT recalculation
+
+        db.recordRemoveOrder(positionId, config, null, removeQty, salePrice, OrderKind.MANUAL);
+
+        int newQty = pos.getQuantity() - removeQty;
+        applyQuantityChange(config, broker, pos, newQty, pos.getAvgEntryPrice());
+
+        log.info("[REMOVE-QTY] DONE (manual) pos={} symbol={} qty={}", positionId, pos.getSymbol(), newQty);
+        return positionId;
+    }
+
+    private Position requireActivePosition(Long positionId) {
+        return db.getPositionById(positionId)
+                .filter(p -> p.getStatus() == PositionStatus.ACTIVE)
+                .orElseThrow(() -> new IllegalArgumentException("Active position not found: " + positionId));
+    }
+
+    private UserConfig requireConfig(Position pos) {
+        return db.getUserConfigByUserId(pos.getUser().getId())
+                .orElseThrow(() -> new IllegalStateException("No config for user " + pos.getUser().getId()));
+    }
+
+    private void validateRemovalQty(Position pos, int removeQty) {
+        if (removeQty >= pos.getQuantity()) {
+            throw new IllegalArgumentException(
+                    "Cannot remove the entire position this way — use Close instead");
+        }
+    }
+
+    private static final int FILL_POLL_ATTEMPTS = 3;
+    private static final long FILL_POLL_DELAY_MS = 400;
+
+    /**
+     * Polls the broker for a just-placed market order's terminal outcome (filled or failed).
+     * Market orders execute against available liquidity almost immediately, so a short bounded
+     * poll is enough in practice — but this never falls back to assuming success. The filled
+     * quantity and fill price get written into the position's quantity and cost basis, so a
+     * guess here would silently corrupt them; if the order hasn't resolved to a fully-filled
+     * state with a real fill price within the poll budget, this throws rather than guessing,
+     * leaving it for the user to verify on Zerodha and reconcile via "Record only" if needed.
+     */
+    private BrokerOrderDetail awaitMarketFill(BrokerAdapter broker, String orderId, String symbol) {
+        BrokerOrderDetail detail = null;
+        for (int attempt = 1; attempt <= FILL_POLL_ATTEMPTS; attempt++) {
+            detail = broker.getOrderDetail(orderId);
+            boolean resolved = detail.isFailed()
+                    || (detail.isFullyFilled() && detail.avgPrice() != null && detail.avgPrice().signum() > 0);
+            if (resolved) break;
+            if (attempt < FILL_POLL_ATTEMPTS) sleepBriefly(FILL_POLL_DELAY_MS);
+        }
+
+        if (detail.isFailed()) {
+            throw new IllegalStateException("Order " + orderId + " for " + symbol
+                    + " was not filled by the broker (status: " + detail.status() + ") — no changes were made.");
+        }
+        if (!detail.isFullyFilled() || detail.avgPrice() == null || detail.avgPrice().signum() <= 0) {
+            throw new IllegalStateException("Order " + orderId + " for " + symbol
+                    + " has not confirmed as filled yet — check Zerodha directly. The order was placed but "
+                    + "this app's records were not updated; if it did fill, use \"Record only\" to reconcile.");
+        }
+        return detail;
+    }
+
+    private static void sleepBriefly(long millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    private static BigDecimal weightedAveragePrice(BigDecimal existingAvg, int existingQty,
+                                                    BigDecimal addPrice, int addQty) {
+        BigDecimal existingCost = existingAvg.multiply(BigDecimal.valueOf(existingQty));
+        BigDecimal addCost = addPrice.multiply(BigDecimal.valueOf(addQty));
+        return existingCost.add(addCost)
+                .divide(BigDecimal.valueOf(existingQty + addQty), 4, RoundingMode.HALF_UP);
+    }
+
+    /**
+     * Updates quantity/avgPrice and, if the position currently has a target GTT, cancels and
+     * re-places it for the configured booking percentage of the new total quantity — keeping the
+     * partial-profit-booking behavior consistent after a manual quantity change. If there was no
+     * GTT to begin with, none is placed (the position stays managed the way it already was).
+     *
+     * <p>The replacement is only placed if cancellation of the old GTT actually succeeded. If
+     * cancellation fails, the old GTT may still be live on Zerodha — placing a second one anyway
+     * would risk two competing triggers on the same symbol/target both firing and overselling.
+     * In that case the old gttOrderId/gttQuantity is kept as-is (best-effort — it's now sized for
+     * the old quantity, not the new one) and flagged for manual reconciliation.
+     */
+    private void applyQuantityChange(UserConfig config, BrokerAdapter broker, Position pos,
+                                     int newQty, BigDecimal newAvgPrice) {
+        String newGttId = pos.getGttOrderId();
+        Integer newGttQuantity = pos.getGttQuantity();
+
+        if (pos.getGttOrderId() != null) {
+            boolean cancelled;
+            try {
+                broker.cancelGttOrder(pos.getGttOrderId());
+                cancelled = true;
+            } catch (Exception e) {
+                cancelled = false;
+                log.error("Could not cancel GTT {} for pos={} before quantity change: {} — skipping GTT " +
+                        "re-placement to avoid a duplicate trigger; existing GTT (sized for the OLD quantity) " +
+                        "left in place and needs manual reconciliation",
+                        pos.getGttOrderId(), pos.getId(), e.getMessage());
+            }
+
+            if (cancelled) {
+                int bookQty = targetBookQuantity(config, newQty);
+                try {
+                    newGttId = broker.placeGttTargetOrder(pos.getSymbol(), bookQty,
+                            pos.getSignal().getTarget(), "pos_" + pos.getId());
+                    newGttQuantity = bookQty;
+                } catch (BrokerException e) {
+                    log.error("Could not re-place target GTT for pos={} after quantity change: {} — position left without GTT",
+                            pos.getId(), e.getMessage());
+                    newGttId = null;
+                    newGttQuantity = null;
+                }
+            }
+        }
+
+        db.adjustPositionQuantity(pos.getId(), pos.getQuantity(), newQty, newAvgPrice, newGttId, newGttQuantity);
+    }
 }
