@@ -21,9 +21,17 @@ function pnlCls(v: number | null) {
   if (v == null) return 'text-gray-400'
   return v >= 0 ? 'text-emerald-600' : 'text-red-600'
 }
-function pnlStr(v: number | null) {
+function pnlStr(v: number | null, pct: number | null = null) {
   if (v == null) return '—'
-  return (v >= 0 ? '+' : '') + '₹' + v.toFixed(2)
+  const base = (v >= 0 ? '+' : '') + '₹' + v.toFixed(2)
+  if (pct == null) return base
+  return `${base} (${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%)`
+}
+
+function unrealisedPnlPct(pos: Position, livePos: LivePosition | undefined): number | null {
+  const costBasis = (pos.avgEntryPrice ?? 0) * pos.quantity
+  if (livePos?.unrealisedPnl == null || !costBasis) return null
+  return (livePos.unrealisedPnl / costBasis) * 100
 }
 
 export function DashboardPage() {
@@ -129,7 +137,7 @@ export function DashboardPage() {
                       </td>
                       <td className="px-5 py-3 whitespace-nowrap">
                         <span className={pnlCls(livePos?.unrealisedPnl ?? null)}>
-                          {pnlStr(livePos?.unrealisedPnl ?? null)}
+                          {pnlStr(livePos?.unrealisedPnl ?? null, unrealisedPnlPct(pos, livePos))}
                         </span>
                       </td>
                       <td className="px-5 py-3 text-gray-600 whitespace-nowrap">{pos.signalStopLoss?.toFixed(2) ?? '—'}</td>

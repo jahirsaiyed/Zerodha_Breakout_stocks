@@ -559,9 +559,9 @@ export function SignalsPage() {
         ) : signals.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400">No signals yet. Add one above.</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="max-h-[70vh] overflow-auto">
           <table className="w-full text-sm">
-            <thead>
+            <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-gray-100 text-left">
                 {['#','Symbol','Entry','Stop Loss','SL Basis','Target','R:R','LTP','vs Entry','Source','Status',''].map(h => (
                   <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
