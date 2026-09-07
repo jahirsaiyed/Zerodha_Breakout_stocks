@@ -116,6 +116,151 @@ class PortfolioControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ── POST /api/portfolio/positions/{id}/add-quantity & remove-quantity ──────
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/add-quantity places a live order and returns the updated position")
+    void addQuantity_validPosition_returns200() throws Exception {
+        Position pos = buildPosition();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(engine.addQuantity(10L, 2)).thenReturn(10L);
+
+        Position updated = buildPosition();
+        updated.setQuantity(7);
+        when(db.getPositionById(10L)).thenReturn(Optional.of(updated));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/add-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(7));
+
+        verify(engine).addQuantity(10L, 2);
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/add-quantity returns 400 for non-existent or not-owned position")
+    void addQuantity_positionNotFoundOrNotOwned_returns400() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/portfolio/positions/99/add-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).addQuantity(any(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/add-quantity rejects non-positive quantity")
+    void addQuantity_invalidQuantity_returns400() throws Exception {
+        mockMvc.perform(post("/api/portfolio/positions/10/add-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":0}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).addQuantity(any(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/record-add-quantity records a manual fill and returns the updated position")
+    void recordAddQuantity_validPosition_returns200() throws Exception {
+        Position pos = buildPosition();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(engine.recordAddQuantity(10L, 2, new BigDecimal("2450.00"))).thenReturn(10L);
+
+        Position updated = buildPosition();
+        updated.setQuantity(7);
+        when(db.getPositionById(10L)).thenReturn(Optional.of(updated));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/record-add-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2,\"avgPrice\":2450.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(7));
+
+        verify(engine).recordAddQuantity(10L, 2, new BigDecimal("2450.00"));
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/remove-quantity places a live order and returns the updated position")
+    void removeQuantity_validPosition_returns200() throws Exception {
+        Position pos = buildPosition();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(engine.removeQuantity(10L, 2)).thenReturn(10L);
+
+        Position updated = buildPosition();
+        updated.setQuantity(3);
+        when(db.getPositionById(10L)).thenReturn(Optional.of(updated));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/remove-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(3));
+
+        verify(engine).removeQuantity(10L, 2);
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/remove-quantity returns 400 for non-existent or not-owned position")
+    void removeQuantity_positionNotFoundOrNotOwned_returns400() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/portfolio/positions/99/remove-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).removeQuantity(any(), anyInt());
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/record-remove-quantity records a manual sale and returns the updated position")
+    void recordRemoveQuantity_validPosition_returns200() throws Exception {
+        Position pos = buildPosition();
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(engine.recordRemoveQuantity(10L, 2, new BigDecimal("2450.00"))).thenReturn(10L);
+
+        Position updated = buildPosition();
+        updated.setQuantity(3);
+        when(db.getPositionById(10L)).thenReturn(Optional.of(updated));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/record-remove-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2,\"avgPrice\":2450.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.quantity").value(3));
+
+        verify(engine).recordRemoveQuantity(10L, 2, new BigDecimal("2450.00"));
+    }
+
+    @Test
+    @DisplayName("POST /api/portfolio/positions/{id}/add-quantity requires authentication")
+    void addQuantity_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(post("/api/portfolio/positions/10/add-quantity")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"quantity\":2}"))
+                .andExpect(status().isForbidden());
+    }
+
     @Test
     @WithMockUser(username = "user@example.com")
     @DisplayName("POST /api/portfolio/positions/{id}/confirm-fill activates the position")

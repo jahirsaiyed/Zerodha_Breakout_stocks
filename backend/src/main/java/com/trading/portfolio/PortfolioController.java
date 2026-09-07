@@ -3,6 +3,7 @@ package com.trading.portfolio;
 import com.trading.broker.BrokerAdapter;
 import com.trading.broker.BrokerAdapterFactory;
 import com.trading.broker.BrokerTokenException;
+import com.trading.portfolio.dto.AdjustQuantityRequest;
 import com.trading.portfolio.dto.ConfirmFillRequest;
 import com.trading.portfolio.dto.CreateManualOrderRequest;
 import com.trading.portfolio.dto.LivePositionResponse;
@@ -145,6 +146,67 @@ public class PortfolioController {
                 .orElseThrow();
 
         return ResponseEntity.ok(PositionResponse.from(updated));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/add-quantity
+     * Places a live market buy order to add to an ACTIVE position owned by the caller.
+     */
+    @PostMapping("/positions/{id}/add-quantity")
+    public ResponseEntity<PositionResponse> addQuantity(
+            @PathVariable Long id,
+            @RequestBody @Valid AdjustQuantityRequest req,
+            Authentication auth) {
+
+        Position pos = requireOwnedActivePosition(id, resolveUserId(auth));
+        engine.addQuantity(pos.getId(), req.quantity());
+        return ResponseEntity.ok(PositionResponse.from(db.getPositionById(id).orElseThrow()));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/record-add-quantity
+     * Records shares the caller already bought directly in Zerodha — no order is placed.
+     */
+    @PostMapping("/positions/{id}/record-add-quantity")
+    public ResponseEntity<PositionResponse> recordAddQuantity(
+            @PathVariable Long id,
+            @RequestBody @Valid ConfirmFillRequest req,
+            Authentication auth) {
+
+        Position pos = requireOwnedActivePosition(id, resolveUserId(auth));
+        engine.recordAddQuantity(pos.getId(), req.quantity(), req.avgPrice());
+        return ResponseEntity.ok(PositionResponse.from(db.getPositionById(id).orElseThrow()));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/remove-quantity
+     * Places a live market sell order to trim an ACTIVE position owned by the caller. Rejects
+     * removing the entire remaining quantity — use /exit to close the position instead.
+     */
+    @PostMapping("/positions/{id}/remove-quantity")
+    public ResponseEntity<PositionResponse> removeQuantity(
+            @PathVariable Long id,
+            @RequestBody @Valid AdjustQuantityRequest req,
+            Authentication auth) {
+
+        Position pos = requireOwnedActivePosition(id, resolveUserId(auth));
+        engine.removeQuantity(pos.getId(), req.quantity());
+        return ResponseEntity.ok(PositionResponse.from(db.getPositionById(id).orElseThrow()));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/record-remove-quantity
+     * Records shares the caller already sold directly in Zerodha — no order is placed.
+     */
+    @PostMapping("/positions/{id}/record-remove-quantity")
+    public ResponseEntity<PositionResponse> recordRemoveQuantity(
+            @PathVariable Long id,
+            @RequestBody @Valid ConfirmFillRequest req,
+            Authentication auth) {
+
+        Position pos = requireOwnedActivePosition(id, resolveUserId(auth));
+        engine.recordRemoveQuantity(pos.getId(), req.quantity(), req.avgPrice());
+        return ResponseEntity.ok(PositionResponse.from(db.getPositionById(id).orElseThrow()));
     }
 
     /**
@@ -294,5 +356,13 @@ public class PortfolioController {
 
     private Long resolveUserId(Authentication auth) {
         return db.getUserIdByEmail(auth.getName());
+    }
+
+    private Position requireOwnedActivePosition(Long id, Long userId) {
+        return db.getActivePositions().stream()
+                .filter(p -> p.getId().equals(id) && p.getUser().getId().equals(userId))
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Active position not found or not owned by caller: " + id));
     }
 }

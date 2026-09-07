@@ -93,7 +93,7 @@ export interface LivePosition {
 export interface Order {
   id: number
   symbol: string
-  type: 'ENTRY' | 'EXIT_TARGET' | 'EXIT_SL' | 'EXIT_MANUAL'
+  type: 'ENTRY' | 'EXIT_TARGET' | 'EXIT_SL' | 'EXIT_MANUAL' | 'ADD'
   orderKind: 'LIMIT' | 'GTT' | 'MANUAL' | string
   quantity: number
   price: number | null

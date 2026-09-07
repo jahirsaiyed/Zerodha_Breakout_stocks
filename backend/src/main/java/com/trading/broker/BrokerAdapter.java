@@ -30,6 +30,12 @@ public interface BrokerAdapter {
     String placeMarketSellOrder(String symbol, int quantity, String tag);
 
     /**
+     * Places a CNC market buy order (used to add quantity to an existing position).
+     * @return broker-assigned order ID
+     */
+    String placeMarketBuyOrder(String symbol, int quantity, String tag);
+
+    /**
      * Places a two-leg GTT OCO order (stop-loss + target) for a held position.
      * @return broker-assigned GTT trigger ID
      */
