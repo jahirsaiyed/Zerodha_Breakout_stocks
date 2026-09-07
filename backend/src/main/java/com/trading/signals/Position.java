@@ -38,6 +38,15 @@ public class Position {
     @Column(name = "gtt_order_id")
     private String gttOrderId;
 
+    /**
+     * Quantity actually placed in the target GTT order at fill time. Persisted rather than
+     * recomputed from the user's current booking percentage, since that percentage can change
+     * between fill and target-hit — recomputing would desync from what the broker actually holds.
+     * Null for positions activated before this field existed (pre-migration in-flight positions).
+     */
+    @Column(name = "gtt_quantity")
+    private Integer gttQuantity;
+
     @Column(name = "breakeven_sl")
     private BigDecimal breakevenSl;
 

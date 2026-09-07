@@ -16,5 +16,7 @@ public record UserConfigResponse(
     BigDecimal marginUsagePercent,
     BigDecimal marginUsageFixedLimit,
     Boolean tradingPaused,
-    Boolean syncPaused
+    Boolean syncPaused,
+    Boolean partialProfitBookingEnabled,
+    BigDecimal partialProfitBookingPercent
 ) {}

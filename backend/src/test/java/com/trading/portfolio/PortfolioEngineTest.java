@@ -133,8 +133,51 @@ class PortfolioEngineTest {
 
         verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(2), any(BigDecimal.class), eq("pos_10")); // GTT for half qty
         verify(broker, never()).placeGttOcoOrder(anyString(), anyInt(), any(), any(), anyString());
-        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456");
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456", 2);
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
+    }
+
+    @Test
+    @DisplayName("checkOrderFills books the configured percentage, not a hardcoded half")
+    void checkOrderFills_customBookingPercent_booksConfiguredShare() {
+        userConfig.setPartialProfitBookingPercent(BigDecimal.valueOf(30));
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
+        pos.setSignal(signal);
+        BrokerOrderDetail detail = new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 10, BigDecimal.valueOf(2410));
+
+        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getOrderDetail("ORD123")).thenReturn(detail);
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT456");
+
+        engine.checkOrderFills();
+
+        // 30% of 10 = 3
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(3), any(BigDecimal.class), eq("pos_10"));
+        verify(db).activatePosition(10L, 10, BigDecimal.valueOf(2410), "GTT456", 3);
+    }
+
+    @Test
+    @DisplayName("checkOrderFills books the full quantity when partial profit booking is disabled")
+    void checkOrderFills_partialProfitBookingDisabled_booksFullQuantity() {
+        userConfig.setPartialProfitBookingEnabled(false);
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildPosition(10L, user, "RELIANCE", "ORD123");
+        pos.setSignal(signal);
+        BrokerOrderDetail detail = new BrokerOrderDetail(BrokerOrderStatus.COMPLETE, 4, BigDecimal.valueOf(2410));
+
+        when(db.getPendingEntryPositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getOrderDetail("ORD123")).thenReturn(detail);
+        when(broker.placeGttTargetOrder(anyString(), anyInt(), any(), anyString())).thenReturn("GTT456");
+
+        engine.checkOrderFills();
+
+        verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(4), any(BigDecimal.class), eq("pos_10"));
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(2410), "GTT456", 4);
     }
 
     @Test
@@ -196,7 +239,7 @@ class PortfolioEngineTest {
         // Must never guess FILLED/CANCELLED from this alone — a pre-existing manual holding in the
         // same symbol would look identical, and guessing FILLED would place a live GTT sell order
         // against shares this position never actually bought.
-        verify(db, never()).activatePosition(anyLong(), anyInt(), any(), any());
+        verify(db, never()).activatePosition(anyLong(), anyInt(), any(), any(), any());
         verify(db, never()).markPositionCancelled(anyLong());
         verify(broker, never()).placeGttTargetOrder(anyString(), anyInt(), any(), anyString());
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderLookupFailedEvent.class));
@@ -218,10 +261,30 @@ class PortfolioEngineTest {
 
         engine.reconcileGttExits();
 
-        // soldQty = 4/2 = 2, remainingQty = 2 — partial exit, NOT a full close
+        // gttQuantity not set on this position (legacy row) → falls back to floor(qty/2) = 2
         verify(db).partialExitPosition(eq(10L), eq(2), any(BigDecimal.class));
         verify(db, never()).closePosition(any(), any(), any());
         verify(events).publishEvent(any(com.trading.portfolio.events.TargetPartialExitEvent.class));
+    }
+
+    @Test
+    @DisplayName("reconcileGttExits uses the persisted gttQuantity, not a recomputed half")
+    void reconcileGttExits_usesPersistedGttQuantity_notRecomputedHalf() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+        pos.setQuantity(10);
+        pos.setGttQuantity(3); // e.g. booked at 30% when filled, even though config may have since changed
+        GttStatusResult triggered = new GttStatusResult(true, BigDecimal.valueOf(2605));
+
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getGttStatus("GTT456")).thenReturn(triggered);
+
+        engine.reconcileGttExits();
+
+        // soldQty = persisted gttQuantity = 3 (NOT 10/2 = 5), remainingQty = 7
+        verify(db).partialExitPosition(eq(10L), eq(7), any(BigDecimal.class));
     }
 
     @Test
@@ -339,7 +402,7 @@ class PortfolioEngineTest {
         engine.confirmManualFill(10L, 4, BigDecimal.valueOf(410.50));
 
         verify(broker, never()).getOrderDetail(anyString()); // never asks Zerodha — caller already verified
-        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), "GTT456");
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), "GTT456", 2);
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
     }
 
@@ -358,7 +421,7 @@ class PortfolioEngineTest {
 
         engine.confirmManualFill(10L, 4, BigDecimal.valueOf(410.50));
 
-        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), null);
+        verify(db).activatePosition(10L, 4, BigDecimal.valueOf(410.50), null, 2);
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
     }
 
@@ -993,7 +1056,7 @@ class PortfolioEngineTest {
         verify(db).createPendingPosition(userConfig, signal, 4, EntrySource.MANUAL);
         verify(db).recordManualEntryOrder(20L, userConfig, signal, 4, BigDecimal.valueOf(2410));
         verify(broker).placeGttTargetOrder(eq("RELIANCE"), eq(2), any(BigDecimal.class), eq("pos_20"));
-        verify(db).activatePosition(20L, 4, BigDecimal.valueOf(2410), "GTT789");
+        verify(db).activatePosition(20L, 4, BigDecimal.valueOf(2410), "GTT789", 2);
         verify(events).publishEvent(any(com.trading.portfolio.events.OrderFilledEvent.class));
         // No broker order is ever placed for a manually-recorded entry
         verify(broker, never()).placeLimitOrder(anyString(), anyInt(), any(), anyString());
@@ -1028,7 +1091,7 @@ class PortfolioEngineTest {
         assertThat(positionId).isEqualTo(21L);
         verify(signalService).create(req);
         verify(signalService, never()).cancel(anyLong());
-        verify(db).activatePosition(21L, 2, BigDecimal.valueOf(3800), "GTT999");
+        verify(db).activatePosition(21L, 2, BigDecimal.valueOf(3800), "GTT999", 1);
     }
 
     @Test

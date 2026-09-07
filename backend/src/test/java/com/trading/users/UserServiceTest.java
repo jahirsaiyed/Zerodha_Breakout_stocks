@@ -2,6 +2,8 @@ package com.trading.users;
 
 import com.trading.common.EncryptionUtil;
 import com.trading.users.dto.CreateUserRequest;
+import com.trading.users.dto.UpdateConfigRequest;
+import com.trading.users.dto.UserConfigResponse;
 import com.trading.users.dto.UserResponse;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -9,6 +11,7 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import java.math.BigDecimal;
 import java.util.Optional;
 import static org.assertj.core.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -89,5 +92,41 @@ class UserServiceTest {
         assertThatThrownBy(() -> userService.changePassword("nobody@test.com", "old", "new12345"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("User not found");
+    }
+
+    @Test
+    void updateConfig_appliesPartialProfitBookingFields() {
+        User user = User.builder().id(1L).email("alice@test.com").build();
+        UserConfig cfg = UserConfig.builder().user(user).build(); // defaults: enabled=true, percent=50
+        when(userConfigRepository.findByUser_Email("alice@test.com")).thenReturn(Optional.of(cfg));
+        when(userConfigRepository.save(any(UserConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdateConfigRequest req = new UpdateConfigRequest(
+                null, null, null, null, null, null,
+                null, null, null, null,
+                false, BigDecimal.valueOf(30));
+
+        UserConfigResponse response = userService.updateConfig("alice@test.com", req);
+
+        assertThat(response.partialProfitBookingEnabled()).isFalse();
+        assertThat(response.partialProfitBookingPercent()).isEqualByComparingTo(BigDecimal.valueOf(30));
+    }
+
+    @Test
+    void updateConfig_leavesPartialProfitBookingFieldsUnchangedWhenNull() {
+        User user = User.builder().id(1L).email("alice@test.com").build();
+        UserConfig cfg = UserConfig.builder().user(user).build(); // defaults: enabled=true, percent=50
+        when(userConfigRepository.findByUser_Email("alice@test.com")).thenReturn(Optional.of(cfg));
+        when(userConfigRepository.save(any(UserConfig.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        UpdateConfigRequest req = new UpdateConfigRequest(
+                null, null, null, null, null, null,
+                null, null, null, null,
+                null, null);
+
+        UserConfigResponse response = userService.updateConfig("alice@test.com", req);
+
+        assertThat(response.partialProfitBookingEnabled()).isTrue();
+        assertThat(response.partialProfitBookingPercent()).isEqualByComparingTo(BigDecimal.valueOf(50));
     }
 }
