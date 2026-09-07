@@ -52,6 +52,13 @@ public class UserConfig {
     @Builder.Default
     @Column(name = "zerodha_connected", nullable = false) private Boolean zerodhaConnected = false;
 
+    @Builder.Default
+    @Column(name = "partial_profit_booking_enabled", nullable = false) private Boolean partialProfitBookingEnabled = true;
+
+    @Builder.Default
+    @Column(name = "partial_profit_booking_percent", nullable = false)
+    private BigDecimal partialProfitBookingPercent = new BigDecimal("50");
+
     @UpdateTimestamp
     @Column(name = "updated_at", nullable = false) private LocalDateTime updatedAt;
 }

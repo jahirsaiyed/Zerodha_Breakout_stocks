@@ -57,6 +57,8 @@ export interface UserConfig {
   marginUsageFixedLimit: number | null
   tradingPaused: boolean
   syncPaused: boolean
+  partialProfitBookingEnabled: boolean
+  partialProfitBookingPercent: number
 }
 
 export interface AccountSummary {

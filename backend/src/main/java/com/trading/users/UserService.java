@@ -84,6 +84,8 @@ public class UserService {
         cfg.setMarginUsageFixedLimit(req.marginUsageFixedLimit());
         if (req.tradingPaused() != null) cfg.setTradingPaused(req.tradingPaused());
         if (req.syncPaused()    != null) cfg.setSyncPaused(req.syncPaused());
+        if (req.partialProfitBookingEnabled() != null) cfg.setPartialProfitBookingEnabled(req.partialProfitBookingEnabled());
+        if (req.partialProfitBookingPercent() != null) cfg.setPartialProfitBookingPercent(req.partialProfitBookingPercent());
         return toConfigResponse(userConfigRepository.save(cfg));
     }
 
@@ -144,7 +146,9 @@ public class UserService {
                 cfg.getMarginUsagePercent(),
                 cfg.getMarginUsageFixedLimit(),
                 cfg.getTradingPaused(),
-                cfg.getSyncPaused());
+                cfg.getSyncPaused(),
+                cfg.getPartialProfitBookingEnabled(),
+                cfg.getPartialProfitBookingPercent());
     }
 
     private BotIdentity fetchBotIdentity(String rawToken) {

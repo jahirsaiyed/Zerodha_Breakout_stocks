@@ -14,5 +14,7 @@ public record UpdateConfigRequest(
     @DecimalMin("1") @DecimalMax("100") BigDecimal marginUsagePercent,
     @DecimalMin("1000") BigDecimal marginUsageFixedLimit,
     Boolean tradingPaused,
-    Boolean syncPaused
+    Boolean syncPaused,
+    Boolean partialProfitBookingEnabled,
+    @DecimalMin("1") @DecimalMax("99") BigDecimal partialProfitBookingPercent
 ) {}

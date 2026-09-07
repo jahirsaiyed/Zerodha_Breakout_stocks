@@ -431,13 +431,15 @@ public class PortfolioEngine {
             catch (Exception e) { log.warn("Could not cancel partial order {}: {}", pos.getEntryOrderId(), e.getMessage()); }
         }
 
-        // Place single-leg GTT for HALF the filled quantity — on trigger only 50% is sold;
-        // the remaining half stays ACTIVE with SL moved to breakeven (avgEntryPrice).
+        // Place single-leg GTT for the configured booking quantity. If partial profit booking is
+        // enabled, only that share of the position is sold on trigger and the remainder stays
+        // ACTIVE with SL moved to breakeven (avgEntryPrice); if disabled, the full quantity is
+        // placed and a trigger closes the position entirely.
         Signal signal = pos.getSignal();
-        int halfQty = Math.max(1, filledQty / 2);
+        int bookQty = targetBookQuantity(config, filledQty);
         String gttId = null;
         try {
-            gttId = broker.placeGttTargetOrder(pos.getSymbol(), halfQty,
+            gttId = broker.placeGttTargetOrder(pos.getSymbol(), bookQty,
                     signal.getTarget(), "pos_" + pos.getId());
         } catch (BrokerException e) {
             // Any broker failure placing the GTT (rejected order, expired token, network) must not
@@ -446,10 +448,28 @@ public class PortfolioEngine {
                     pos.getId(), e.getMessage());
         }
 
-        db.activatePosition(pos.getId(), filledQty, detail.avgPrice(), gttId);
+        db.activatePosition(pos.getId(), filledQty, detail.avgPrice(), gttId, bookQty);
         events.publishEvent(new OrderFilledEvent(pos.getId(), pos.getSymbol(), pos.getEntryOrderId(),
                 filledQty, detail.avgPrice(), gttId));
-        log.info("[FILL] FILLED pos={} symbol={} qty={} avgPrice={} gttId={}", pos.getId(), pos.getSymbol(), filledQty, detail.avgPrice(), gttId);
+        log.info("[FILL] FILLED pos={} symbol={} qty={} avgPrice={} gttId={} bookQty={}",
+                pos.getId(), pos.getSymbol(), filledQty, detail.avgPrice(), gttId, bookQty);
+    }
+
+    /**
+     * Quantity to place in the target GTT order. If the user has partial profit booking disabled,
+     * the full filled quantity is booked (a trigger fully closes the position). Otherwise, the
+     * configured percentage of the filled quantity is booked, clamped to leave at least 1 share
+     * so the remainder can carry a breakeven stop-loss.
+     */
+    private int targetBookQuantity(UserConfig config, int filledQty) {
+        if (!Boolean.TRUE.equals(config.getPartialProfitBookingEnabled())) {
+            return filledQty;
+        }
+        BigDecimal pct = config.getPartialProfitBookingPercent();
+        int qty = pct.multiply(BigDecimal.valueOf(filledQty))
+                .divide(BigDecimal.valueOf(100), 0, RoundingMode.HALF_UP)
+                .intValue();
+        return Math.max(1, Math.min(qty, filledQty));
     }
 
     private void checkExpiry(UserConfig config, BrokerAdapter broker, Position pos, String orderId) {
@@ -510,8 +530,10 @@ public class PortfolioEngine {
         BigDecimal fillPrice = gttStatus.filledPrice();
 
         // GTT is single-leg target-only — a trigger always means target was reached.
-        // The GTT was placed for floor(qty/2) shares; remaining = qty - soldQty stays ACTIVE.
-        int soldQty = Math.max(1, pos.getQuantity() / 2);
+        // soldQty is the quantity actually placed in the GTT at fill time (persisted on the
+        // position, since the user's booking percentage can change afterward). Positions
+        // activated before this field existed fall back to the legacy floor(qty/2) split.
+        int soldQty = pos.getGttQuantity() != null ? pos.getGttQuantity() : Math.max(1, pos.getQuantity() / 2);
         int remainingQty = pos.getQuantity() - soldQty;
 
         if (remainingQty <= 0) {
@@ -525,7 +547,7 @@ public class PortfolioEngine {
             return;
         }
 
-        // Partial exit: sold soldQty shares; keep remaining half ACTIVE at breakeven SL.
+        // Partial exit: sold soldQty shares; keep remainder ACTIVE at breakeven SL.
         BigDecimal breakevenSl = pos.getAvgEntryPrice();
         db.partialExitPosition(pos.getId(), remainingQty, breakevenSl);
         events.publishEvent(new TargetPartialExitEvent(

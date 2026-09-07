@@ -157,7 +157,7 @@ public class PortfolioDbService {
     }
 
     /**
-     * Records a 50% partial exit at target: reduces qty, sets breakeven SL, clears GTT id.
+     * Records a partial exit at target: reduces qty, sets breakeven SL, clears GTT id.
      * Position status stays ACTIVE so the closing-basis scheduler can handle the remainder.
      */
     @Transactional
@@ -166,17 +166,19 @@ public class PortfolioDbService {
         position.setQuantity(remainingQty);
         position.setBreakevenSl(breakevenSl);
         position.setGttOrderId(null);
+        position.setGttQuantity(null);
         positionRepository.save(position);
     }
 
     @Transactional
     public void activatePosition(Long positionId, int filledQty,
-                                 BigDecimal avgPrice, String gttId) {
+                                 BigDecimal avgPrice, String gttId, Integer gttQuantity) {
         Position position = positionRepository.findById(positionId).orElseThrow();
         position.setStatus(PositionStatus.ACTIVE);
         position.setQuantity(filledQty);
         position.setAvgEntryPrice(avgPrice);
         position.setGttOrderId(gttId);
+        position.setGttQuantity(gttId != null ? gttQuantity : null);
         position.setOpenedAt(LocalDateTime.now());
         positionRepository.save(position);
 

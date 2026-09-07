@@ -106,6 +106,7 @@ export function SettingsPage() {
     orderExpiryDays: '5',
     marginUsagePercent: '100',
     marginUsageFixedLimit: '',
+    partialProfitBookingPercent: '50',
     telegramChatId: '',
     zerodhaTotpSecret: '',
   })
@@ -119,6 +120,7 @@ export function SettingsPage() {
         orderExpiryDays: String(config.orderExpiryDays),
         marginUsagePercent: String(config.marginUsagePercent),
         marginUsageFixedLimit: config.marginUsageFixedLimit != null ? String(config.marginUsageFixedLimit) : '',
+        partialProfitBookingPercent: String(config.partialProfitBookingPercent),
         telegramChatId: config.telegramChatId ?? '',
         zerodhaTotpSecret: '',
       })
@@ -158,6 +160,7 @@ export function SettingsPage() {
       orderExpiryDays: Number(form.orderExpiryDays),
       marginUsagePercent: Number(form.marginUsagePercent),
       marginUsageFixedLimit: form.marginUsageFixedLimit !== '' ? Number(form.marginUsageFixedLimit) : null,
+      partialProfitBookingPercent: Number(form.partialProfitBookingPercent),
       telegramChatId: form.telegramChatId || null,
       zerodhaTotpSecret: form.zerodhaTotpSecret || null,
     }),
@@ -170,7 +173,7 @@ export function SettingsPage() {
   })
 
   const togglePause = useMutation({
-    mutationFn: (patch: { tradingPaused?: boolean; syncPaused?: boolean }) =>
+    mutationFn: (patch: { tradingPaused?: boolean; syncPaused?: boolean; partialProfitBookingEnabled?: boolean }) =>
       api.put('/users/me/config', patch),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['config'] })
@@ -469,6 +472,33 @@ export function SettingsPage() {
             hint={form.positionSizingMethod === 'RISK_BASED' ? 'Risk % of capital per trade' : 'Amount in ₹ per position'}>
             <input type="number" min={1} value={form.positionSizingValue}
               onChange={set('positionSizingValue')} className={inputCls} />
+          </Field>
+        </div>
+      </div>
+
+      {/* Partial profit booking */}
+      <div className="rounded-xl border border-gray-200 bg-white p-6">
+        <div className="mb-1 flex items-center justify-between gap-4">
+          <h2 className="text-sm font-semibold text-gray-900">Partial Profit Booking</h2>
+          <Toggle
+            label="Book partial profit at target"
+            checked={config?.partialProfitBookingEnabled ?? true}
+            onChange={v => togglePause.mutate({ partialProfitBookingEnabled: v })}
+            disabled={togglePause.isPending}
+          />
+        </div>
+        <p className="mb-5 text-xs text-gray-400">
+          When the target price is hit, book profit on this percentage of the position and move the
+          stop loss to your average buying price for the remainder. Turn off to exit the full
+          position at target instead. The toggle applies immediately; the percentage is saved with
+          the button below.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Booking Percentage (%)" hint="Share of the position to book at target (1–99%)">
+            <input type="number" min={1} max={99} step={1} value={form.partialProfitBookingPercent}
+              onChange={set('partialProfitBookingPercent')}
+              disabled={!(config?.partialProfitBookingEnabled ?? true)}
+              className={inputCls + ' disabled:cursor-not-allowed disabled:bg-gray-50 disabled:text-gray-400'} />
           </Field>
         </div>
       </div>
