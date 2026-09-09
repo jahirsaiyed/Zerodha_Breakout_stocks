@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -7,11 +8,29 @@ import {
 import api from '../lib/api'
 import type { Position } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
+import { CustomizePanel } from '../components/CustomizePanel'
+import { loadColumnOrder, saveVisibleKeys } from '../lib/columnPrefs'
+import {
+  DEFAULT_HISTORY_COLUMNS,
+  HISTORY_COLUMNS_STORAGE_KEY,
+  HISTORY_COLUMN_LABELS,
+  type HistoryColumnKey,
+} from '../lib/historyColumns'
 
 type Filter = 'ALL' | 'CLOSED_TARGET' | 'CLOSED_SL' | 'CLOSED_MANUAL'
 
+const HISTORY_COLUMN_OPTIONS = DEFAULT_HISTORY_COLUMNS.map(key => ({ key, label: HISTORY_COLUMN_LABELS[key] }))
+
 export function HistoryPage() {
   const [filter, setFilter] = useState<Filter>('ALL')
+  const [columns, setColumnsState] = useState<HistoryColumnKey[]>(() =>
+    loadColumnOrder(HISTORY_COLUMNS_STORAGE_KEY, DEFAULT_HISTORY_COLUMNS, DEFAULT_HISTORY_COLUMNS))
+
+  const handleColumnsChange = (keys: string[]) => {
+    const next = keys as HistoryColumnKey[]
+    setColumnsState(next)
+    saveVisibleKeys(HISTORY_COLUMNS_STORAGE_KEY, next)
+  }
 
   const { data: positions = [], isLoading } = useQuery<Position[]>({
     queryKey: ['positions'],
@@ -52,6 +71,22 @@ export function HistoryPage() {
     { label: 'Stop Loss', value: 'CLOSED_SL' },
     { label: 'Manual Exit', value: 'CLOSED_MANUAL' },
   ]
+
+  const columnCells: Record<HistoryColumnKey, (pos: Position) => ReactNode> = {
+    qty: pos => pos.quantity,
+    avgEntry: pos => pos.avgEntryPrice?.toFixed(2) ?? '—',
+    pnl: pos => pos.realisedPnl != null ? (
+      <span className={pos.realisedPnl >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+        {pos.realisedPnl >= 0 ? '+' : ''}{pos.realisedPnl.toFixed(2)}
+      </span>
+    ) : <span className="text-gray-400">—</span>,
+    outcome: pos => <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />,
+    closed: pos => (
+      <span className="text-xs text-gray-400">
+        {pos.closedAt ? new Date(pos.closedAt).toLocaleDateString('en-IN') : '—'}
+      </span>
+    ),
+  }
 
   return (
     <div className="p-4 sm:p-8">
@@ -112,17 +147,27 @@ export function HistoryPage() {
       )}
 
       {/* Filter pills */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {FILTERS.map(f => (
-          <button key={f.value} onClick={() => setFilter(f.value)}
-            className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
-              filter === f.value
-                ? 'bg-indigo-500 text-white'
-                : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
-            }`}>
-            {f.label}
-          </button>
-        ))}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2">
+          {FILTERS.map(f => (
+            <button key={f.value} onClick={() => setFilter(f.value)}
+              className={`rounded-full px-3.5 py-1.5 text-xs font-medium transition-colors ${
+                filter === f.value
+                  ? 'bg-indigo-500 text-white'
+                  : 'border border-gray-200 bg-white text-gray-600 hover:bg-gray-50'
+              }`}>
+              {f.label}
+            </button>
+          ))}
+        </div>
+        <CustomizePanel
+          label="Customize columns"
+          options={HISTORY_COLUMN_OPTIONS}
+          visibleKeys={columns}
+          onChange={handleColumnsChange}
+          defaultKeys={DEFAULT_HISTORY_COLUMNS}
+          reorderOnly
+        />
       </div>
 
       {/* Table */}
@@ -136,8 +181,11 @@ export function HistoryPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
-                {['Symbol','Qty','Avg Entry','P&L','Outcome','Closed'].map(h => (
-                  <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
+                <th className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Symbol</th>
+                {columns.map(key => (
+                  <th key={key} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
+                    {HISTORY_COLUMN_LABELS[key]}
+                  </th>
                 ))}
               </tr>
             </thead>
@@ -145,21 +193,9 @@ export function HistoryPage() {
               {filtered.map(pos => (
                 <tr key={pos.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                   <td className="px-5 py-3.5 font-medium text-gray-900">{pos.symbol}</td>
-                  <td className="px-5 py-3.5 text-gray-600">{pos.quantity}</td>
-                  <td className="px-5 py-3.5 text-gray-600">{pos.avgEntryPrice?.toFixed(2) ?? '—'}</td>
-                  <td className="px-5 py-3.5">
-                    {pos.realisedPnl != null ? (
-                      <span className={pos.realisedPnl >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
-                        {pos.realisedPnl >= 0 ? '+' : ''}{pos.realisedPnl.toFixed(2)}
-                      </span>
-                    ) : <span className="text-gray-400">—</span>}
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />
-                  </td>
-                  <td className="px-5 py-3.5 text-xs text-gray-400">
-                    {pos.closedAt ? new Date(pos.closedAt).toLocaleDateString('en-IN') : '—'}
-                  </td>
+                  {columns.map(key => (
+                    <td key={key} className="px-5 py-3.5 whitespace-nowrap">{columnCells[key](pos)}</td>
+                  ))}
                 </tr>
               ))}
             </tbody>

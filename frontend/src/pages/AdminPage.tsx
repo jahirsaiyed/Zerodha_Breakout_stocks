@@ -1,12 +1,21 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Navigate } from 'react-router-dom'
 import api from '../lib/api'
 import type { AdminUser, HealthResponse } from '../lib/types'
 import { Badge } from '../components/Badge'
+import { CustomizePanel } from '../components/CustomizePanel'
 import { useAuth } from '../contexts/AuthContext'
+import { loadColumnOrder, saveVisibleKeys } from '../lib/columnPrefs'
+import {
+  ADMIN_COLUMNS_STORAGE_KEY,
+  ADMIN_COLUMN_LABELS,
+  DEFAULT_ADMIN_COLUMNS,
+  type AdminColumnKey,
+} from '../lib/adminColumns'
 
+const ADMIN_COLUMN_OPTIONS = DEFAULT_ADMIN_COLUMNS.map(key => ({ key, label: ADMIN_COLUMN_LABELS[key] }))
 
 export function AdminPage() {
   const { user } = useAuth()
@@ -15,6 +24,14 @@ export function AdminPage() {
   const [form, setForm] = useState({ name: '', email: '', password: '', role: 'USER' })
   const [formError, setFormError] = useState('')
   const [toggleError, setToggleError] = useState('')
+  const [columns, setColumnsState] = useState<AdminColumnKey[]>(() =>
+    loadColumnOrder(ADMIN_COLUMNS_STORAGE_KEY, DEFAULT_ADMIN_COLUMNS, DEFAULT_ADMIN_COLUMNS))
+
+  const handleColumnsChange = (keys: string[]) => {
+    const next = keys as AdminColumnKey[]
+    setColumnsState(next)
+    saveVisibleKeys(ADMIN_COLUMNS_STORAGE_KEY, next)
+  }
 
   if (user?.role !== 'ADMIN') return <Navigate to="/" replace />
 
@@ -54,6 +71,13 @@ export function AdminPage() {
 
   const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const columnCells: Record<AdminColumnKey, (u: AdminUser) => ReactNode> = {
+    email: u => <span className="text-gray-500">{u.email}</span>,
+    role: u => <Badge label={u.role} variant={u.role === 'ADMIN' ? 'indigo' : 'gray'} />,
+    status: u => <Badge label={u.active ? 'Active' : 'Disabled'} variant={u.active ? 'green' : 'red'} />,
+    joined: u => <span className="text-xs text-gray-400">{new Date(u.createdAt).toLocaleDateString('en-IN')}</span>,
+  }
 
   return (
     <div className="p-4 sm:p-8">
@@ -115,10 +139,20 @@ export function AdminPage() {
           <h1 className="text-xl font-semibold text-gray-950">User Management</h1>
           <p className="text-sm text-gray-500">Admin — manage system users</p>
         </div>
-        <button onClick={() => setShowForm(v => !v)}
-          className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600">
-          {showForm ? 'Cancel' : '+ New User'}
-        </button>
+        <div className="flex items-center gap-3">
+          <CustomizePanel
+            label="Customize columns"
+            options={ADMIN_COLUMN_OPTIONS}
+            visibleKeys={columns}
+            onChange={handleColumnsChange}
+            defaultKeys={DEFAULT_ADMIN_COLUMNS}
+            reorderOnly
+          />
+          <button onClick={() => setShowForm(v => !v)}
+            className="rounded-md bg-indigo-500 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-600">
+            {showForm ? 'Cancel' : '+ New User'}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -169,25 +203,22 @@ export function AdminPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
-                {['Name','Email','Role','Status','Joined','Actions'].map(h => (
-                  <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
+                <th className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Name</th>
+                {columns.map(key => (
+                  <th key={key} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
+                    {ADMIN_COLUMN_LABELS[key]}
+                  </th>
                 ))}
+                <th className="px-5 py-3 text-xs font-medium text-gray-400">Actions</th>
               </tr>
             </thead>
             <tbody>
               {users.map(u => (
                 <tr key={u.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                   <td className="px-5 py-3.5 font-medium text-gray-900">{u.name}</td>
-                  <td className="px-5 py-3.5 text-gray-500">{u.email}</td>
-                  <td className="px-5 py-3.5">
-                    <Badge label={u.role} variant={u.role === 'ADMIN' ? 'indigo' : 'gray'} />
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <Badge label={u.active ? 'Active' : 'Disabled'} variant={u.active ? 'green' : 'red'} />
-                  </td>
-                  <td className="px-5 py-3.5 text-xs text-gray-400">
-                    {new Date(u.createdAt).toLocaleDateString('en-IN')}
-                  </td>
+                  {columns.map(key => (
+                    <td key={key} className="px-5 py-3.5 whitespace-nowrap">{columnCells[key](u)}</td>
+                  ))}
                   <td className="px-5 py-3.5">
                     {u.id !== user?.id && (
                       <button

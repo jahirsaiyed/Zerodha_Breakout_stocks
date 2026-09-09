@@ -4,15 +4,33 @@ interface CustomizePanelProps {
   /** Accessible label for the trigger button, e.g. "Customize stat cards". */
   label: string
   options: { key: string; label: string }[]
+  /**
+   * The current order. In the default (hideable) mode this is the subset of `options` keys
+   * that are visible, in display order — omitted keys are hidden. In `reorderOnly` mode this
+   * must always contain every option key (nothing can be hidden), in display order.
+   */
   visibleKeys: string[]
   onChange: (nextVisibleKeys: string[]) => void
+  /** When true, hides the show/hide checkboxes — every column stays visible, order-only. */
+  reorderOnly?: boolean
+  /** Shown as a "Reset to default order" action when provided. */
+  defaultKeys?: string[]
 }
 
-export function CustomizePanel({ label, options, visibleKeys, onChange }: CustomizePanelProps) {
+function moveKeyBefore(order: string[], key: string, beforeKey: string): string[] {
+  if (key === beforeKey) return order
+  const without = order.filter(k => k !== key)
+  const targetIndex = without.indexOf(beforeKey)
+  without.splice(targetIndex, 0, key)
+  return without
+}
+
+export function CustomizePanel({ label, options, visibleKeys, onChange, reorderOnly = false, defaultKeys }: CustomizePanelProps) {
   const [open, setOpen] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
   const triggerRef = useRef<HTMLButtonElement>(null)
   const panelId = useId()
+  const dragKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -40,6 +58,33 @@ export function CustomizePanel({ label, options, visibleKeys, onChange }: Custom
     onChange(isVisible ? visibleKeys.filter(k => k !== key) : [...visibleKeys, key])
   }
 
+  // Display order: visible keys first (in their current order), then hidden ones — dragging
+  // reorders within this combined list, while checkboxes control membership in `visibleKeys`.
+  const hiddenKeys = reorderOnly ? [] : options.map(o => o.key).filter(k => !visibleKeys.includes(k))
+  const displayKeys = [...visibleKeys, ...hiddenKeys]
+  const visibleKeySet = new Set(visibleKeys)
+  const labelByKey = new Map(options.map(o => [o.key, o.label]))
+
+  const reorder = (key: string, beforeKey: string) => {
+    const nextDisplay = moveKeyBefore(displayKeys, key, beforeKey)
+    onChange(reorderOnly ? nextDisplay : nextDisplay.filter(k => visibleKeySet.has(k)))
+  }
+
+  const moveBy = (key: string, direction: -1 | 1) => {
+    const index = displayKeys.indexOf(key)
+    const targetIndex = index + direction
+    if (targetIndex < 0 || targetIndex >= displayKeys.length) return
+    // Moving down means "insert after the neighbor"; moving up means "insert before it".
+    const beforeKey = direction === -1 ? displayKeys[targetIndex] : displayKeys[targetIndex + 1]
+    if (beforeKey === undefined) {
+      onChange(reorderOnly
+        ? [...displayKeys.filter(k => k !== key), key]
+        : [...displayKeys.filter(k => k !== key), key].filter(k => visibleKeySet.has(k)))
+      return
+    }
+    reorder(key, beforeKey)
+  }
+
   return (
     <div ref={containerRef} className="relative">
       <button
@@ -60,21 +105,75 @@ export function CustomizePanel({ label, options, visibleKeys, onChange }: Custom
       </button>
 
       {open && (
-        <div id={panelId} role="menu" className="absolute right-0 z-10 mt-1.5 w-56 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
-          {options.map(opt => (
-            <label
-              key={opt.key}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+        <div id={panelId} role="menu" className="absolute right-0 z-10 mt-1.5 w-60 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+          {displayKeys.map((key, index) => {
+            const isVisible = reorderOnly || visibleKeySet.has(key)
+            const optionLabel = labelByKey.get(key) ?? key
+            return (
+              <div
+                key={key}
+                draggable
+                onDragStart={e => {
+                  dragKeyRef.current = key
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', key)
+                }}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => {
+                  e.preventDefault()
+                  const dragged = dragKeyRef.current
+                  dragKeyRef.current = null
+                  if (dragged && dragged !== key) reorder(dragged, key)
+                }}
+                className="group flex items-center gap-1.5 rounded-md px-1.5 py-1.5 hover:bg-gray-50"
+              >
+                <span aria-hidden="true" className="cursor-grab select-none px-0.5 text-gray-300 group-hover:text-gray-400">
+                  ⠿
+                </span>
+                <label className="flex flex-1 cursor-pointer items-center gap-2 text-sm text-gray-700">
+                  {!reorderOnly && (
+                    <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={() => toggle(key)}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-500 focus:ring-indigo-400"
+                    />
+                  )}
+                  {optionLabel}
+                </label>
+                <div className="flex flex-col opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  <button
+                    type="button"
+                    aria-label={`Move ${optionLabel} up`}
+                    disabled={index === 0}
+                    onClick={() => moveBy(key, -1)}
+                    className="px-1 text-[10px] leading-3 text-gray-400 hover:text-indigo-600 disabled:opacity-30"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    aria-label={`Move ${optionLabel} down`}
+                    disabled={index === displayKeys.length - 1}
+                    onClick={() => moveBy(key, 1)}
+                    className="px-1 text-[10px] leading-3 text-gray-400 hover:text-indigo-600 disabled:opacity-30"
+                  >
+                    ▼
+                  </button>
+                </div>
+              </div>
+            )
+          })}
+
+          {defaultKeys && (
+            <button
+              type="button"
+              onClick={() => onChange(defaultKeys)}
+              className="mt-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-400 hover:bg-gray-50 hover:text-gray-600"
             >
-              <input
-                type="checkbox"
-                checked={visibleKeys.includes(opt.key)}
-                onChange={() => toggle(opt.key)}
-                className="h-3.5 w-3.5 rounded border-gray-300 text-indigo-500 focus:ring-indigo-400"
-              />
-              {opt.label}
-            </label>
-          ))}
+              Reset to default order
+            </button>
+          )}
         </div>
       )}
     </div>
