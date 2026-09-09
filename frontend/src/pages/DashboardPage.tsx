@@ -155,6 +155,7 @@ export function DashboardPage() {
           options={STAT_CARD_OPTIONS}
           visibleKeys={visibleStatCards}
           onChange={handleStatCardsChange}
+          defaultKeys={DEFAULT_STAT_CARDS}
         />
       </div>
       {visibleStatCards.length === 0 ? (
@@ -184,6 +185,7 @@ export function DashboardPage() {
               options={POSITION_COLUMN_OPTIONS}
               visibleKeys={visibleColumns}
               onChange={handleColumnsChange}
+              defaultKeys={DEFAULT_POSITION_COLUMNS}
             />
             <Link to="/positions" className="text-xs text-indigo-600 hover:text-indigo-700">View all →</Link>
           </div>

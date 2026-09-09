@@ -190,6 +190,26 @@ describe('DashboardPage', () => {
     expect(table.querySelectorAll('th')).toHaveLength(1)
   })
 
+  it('reorders a table column via the customize panel up-arrow and persists the new order', async () => {
+    mockApiResponses()
+    renderDashboard()
+
+    await waitFor(() => expect(screen.getByText('RELIANCE')).toBeInTheDocument())
+
+    const panels = screen.getAllByRole('button', { name: /customize/i })
+    await userEvent.click(panels[1])
+    // Default order is qty, avgEntry, ltp, invested, ... — move "LTP" up above "Avg Entry".
+    await userEvent.click(screen.getByRole('button', { name: 'Move LTP up' }))
+
+    const saved = JSON.parse(localStorage.getItem(POSITION_COLUMNS_STORAGE_KEY) ?? '[]')
+    expect(saved.indexOf('ltp')).toBeLessThan(saved.indexOf('avgEntry'))
+
+    // Header order in the DOM should reflect the new order too.
+    await userEvent.click(document.body)
+    const headers = Array.from(document.querySelectorAll('table thead th')).map(th => th.textContent)
+    expect(headers.indexOf('LTP')).toBeLessThan(headers.indexOf('Avg Entry'))
+  })
+
   it('falls back to defaults when the stored array filters down to zero recognized keys (stale data)', async () => {
     localStorage.setItem(STAT_CARDS_STORAGE_KEY, JSON.stringify(['someRemovedKeyFromAnOldVersion']))
     mockApiResponses()

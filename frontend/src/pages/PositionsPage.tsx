@@ -1,11 +1,26 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { FormEvent, ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { LivePosition, Position, StopLossBasis } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
+import { CustomizePanel } from '../components/CustomizePanel'
+import { loadColumnOrder, saveVisibleKeys } from '../lib/columnPrefs'
+import {
+  DEFAULT_POSITION_ACTIVE_COLUMNS,
+  DEFAULT_POSITION_PENDING_COLUMNS,
+  POSITION_ACTIVE_COLUMNS_STORAGE_KEY,
+  POSITION_ACTIVE_COLUMN_LABELS,
+  POSITION_PENDING_COLUMNS_STORAGE_KEY,
+  POSITION_PENDING_COLUMN_LABELS,
+  type PositionActiveColumnKey,
+  type PositionPendingColumnKey,
+} from '../lib/positionsColumns'
 
 type Tab = 'ACTIVE' | 'PENDING_ENTRY'
+
+const ACTIVE_COLUMN_OPTIONS = DEFAULT_POSITION_ACTIVE_COLUMNS.map(key => ({ key, label: POSITION_ACTIVE_COLUMN_LABELS[key] }))
+const PENDING_COLUMN_OPTIONS = DEFAULT_POSITION_PENDING_COLUMNS.map(key => ({ key, label: POSITION_PENDING_COLUMN_LABELS[key] }))
 
 const BASIS_OPTIONS: StopLossBasis[] = ['DAILY', 'HOURLY', 'WEEKLY']
 
@@ -421,6 +436,22 @@ export function PositionsPage() {
   const [actionError, setActionError] = useState('')
   const [successMsg, setSuccessMsg] = useState('')
 
+  const [activeColumns, setActiveColumnsState] = useState<PositionActiveColumnKey[]>(() =>
+    loadColumnOrder(POSITION_ACTIVE_COLUMNS_STORAGE_KEY, DEFAULT_POSITION_ACTIVE_COLUMNS, DEFAULT_POSITION_ACTIVE_COLUMNS))
+  const [pendingColumns, setPendingColumnsState] = useState<PositionPendingColumnKey[]>(() =>
+    loadColumnOrder(POSITION_PENDING_COLUMNS_STORAGE_KEY, DEFAULT_POSITION_PENDING_COLUMNS, DEFAULT_POSITION_PENDING_COLUMNS))
+
+  const handleActiveColumnsChange = (keys: string[]) => {
+    const next = keys as PositionActiveColumnKey[]
+    setActiveColumnsState(next)
+    saveVisibleKeys(POSITION_ACTIVE_COLUMNS_STORAGE_KEY, next)
+  }
+  const handlePendingColumnsChange = (keys: string[]) => {
+    const next = keys as PositionPendingColumnKey[]
+    setPendingColumnsState(next)
+    saveVisibleKeys(POSITION_PENDING_COLUMNS_STORAGE_KEY, next)
+  }
+
   const { data: positions = [], isLoading } = useQuery<Position[]>({
     queryKey: ['positions'],
     queryFn: () => api.get('/portfolio/positions').then(r => r.data),
@@ -462,6 +493,44 @@ export function PositionsPage() {
     ? 'border-b-2 border-indigo-500 text-indigo-600 font-medium'
     : 'border-b-2 border-transparent text-gray-500 hover:text-gray-700'
 
+  const renderStopLoss = (pos: Position): ReactNode => pos.breakevenSl != null ? (
+    <span className="inline-flex flex-col gap-0.5">
+      <span className="font-medium text-amber-600">{pos.breakevenSl.toFixed(2)}</span>
+      <span className="text-xs text-amber-500">breakeven</span>
+    </span>
+  ) : (
+    <span className="text-gray-600">{pos.signalStopLoss?.toFixed(2) ?? '—'}</span>
+  )
+  const renderStatus = (pos: Position): ReactNode => <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />
+
+  const activeColumnCells: Record<PositionActiveColumnKey, (pos: Position, livePos: LivePosition | undefined) => ReactNode> = {
+    qty: pos => pos.quantity,
+    avgEntry: pos => pos.avgEntryPrice?.toFixed(2) ?? '—',
+    ltp: (_pos, livePos) => livePos?.ltp != null ? `₹${livePos.ltp.toFixed(2)}` : '—',
+    unrealisedPnl: (_pos, livePos) => {
+      const unPnl = livePos?.unrealisedPnl ?? null
+      return (
+        <span className={unPnl == null ? 'text-gray-400' : unPnl >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
+          {unPnl == null ? '—' : (unPnl >= 0 ? '+' : '') + `₹${unPnl.toFixed(2)}`}
+        </span>
+      )
+    },
+    stopLoss: pos => renderStopLoss(pos),
+    target: pos => pos.signalTarget?.toFixed(2) ?? '—',
+    gtt: pos => pos.gttOrderId
+      ? <Badge label="GTT Active" variant="indigo" />
+      : <span className="text-xs text-gray-400">None</span>,
+    status: pos => renderStatus(pos),
+  }
+
+  const pendingColumnCells: Record<PositionPendingColumnKey, (pos: Position) => ReactNode> = {
+    qty: pos => pos.quantity,
+    entryPrice: pos => pos.avgEntryPrice?.toFixed(2) ?? '—',
+    stopLoss: pos => renderStopLoss(pos),
+    target: pos => pos.signalTarget?.toFixed(2) ?? '—',
+    status: pos => renderStatus(pos),
+  }
+
   return (
     <div className="p-4 sm:p-8">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
@@ -494,16 +563,37 @@ export function PositionsPage() {
 
       <div className="rounded-xl border border-gray-200 bg-white">
         {/* Tabs */}
-        <div className="flex gap-6 border-b border-gray-200 px-5">
-          {(['ACTIVE', 'PENDING_ENTRY'] as Tab[]).map(t => (
-            <button key={t} onClick={() => setTab(t)}
-              className={`py-3 text-sm transition-colors ${tabCls(t)}`}>
-              {t === 'ACTIVE' ? 'Active' : 'Pending'}
-              <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
-                {positions.filter(p => p.status === t).length}
-              </span>
-            </button>
-          ))}
+        <div className="flex items-center justify-between gap-3 border-b border-gray-200 px-5">
+          <div className="flex gap-6">
+            {(['ACTIVE', 'PENDING_ENTRY'] as Tab[]).map(t => (
+              <button key={t} onClick={() => setTab(t)}
+                className={`py-3 text-sm transition-colors ${tabCls(t)}`}>
+                {t === 'ACTIVE' ? 'Active' : 'Pending'}
+                <span className="ml-1.5 rounded-full bg-gray-100 px-1.5 py-0.5 text-xs text-gray-600">
+                  {positions.filter(p => p.status === t).length}
+                </span>
+              </button>
+            ))}
+          </div>
+          {tab === 'ACTIVE' ? (
+            <CustomizePanel
+              label="Customize columns"
+              options={ACTIVE_COLUMN_OPTIONS}
+              visibleKeys={activeColumns}
+              onChange={handleActiveColumnsChange}
+              defaultKeys={DEFAULT_POSITION_ACTIVE_COLUMNS}
+              reorderOnly
+            />
+          ) : (
+            <CustomizePanel
+              label="Customize columns"
+              options={PENDING_COLUMN_OPTIONS}
+              visibleKeys={pendingColumns}
+              onChange={handlePendingColumnsChange}
+              defaultKeys={DEFAULT_POSITION_PENDING_COLUMNS}
+              reorderOnly
+            />
+          )}
         </div>
 
         {isLoading ? (
@@ -515,20 +605,25 @@ export function PositionsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 text-left">
+                <th className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Symbol</th>
                 {tab === 'ACTIVE'
-                  ? ['Symbol','Qty','Avg Entry','LTP','Unrealised P&L','Stop Loss','Target','GTT','Status',''].map(h => (
-                      <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
+                  ? activeColumns.map(key => (
+                      <th key={key} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
+                        {POSITION_ACTIVE_COLUMN_LABELS[key]}
+                      </th>
                     ))
-                  : ['Symbol','Qty','Entry Price','Stop Loss','Target','Status',''].map(h => (
-                      <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
+                  : pendingColumns.map(key => (
+                      <th key={key} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
+                        {POSITION_PENDING_COLUMN_LABELS[key]}
+                      </th>
                     ))
                 }
+                <th className="px-5 py-3 text-xs font-medium text-gray-400"></th>
               </tr>
             </thead>
             <tbody>
               {rows.map(pos => {
                 const livePos = liveMap.get(pos.id)
-                const unPnl = livePos?.unrealisedPnl ?? null
                 return (
                   <tr key={pos.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                     <td className="px-5 py-3.5">
@@ -541,41 +636,14 @@ export function PositionsPage() {
                         )}
                       </div>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-600">{pos.quantity}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{pos.avgEntryPrice?.toFixed(2) ?? '—'}</td>
-                    {tab === 'ACTIVE' && (
-                      <>
-                        <td className="px-5 py-3.5 font-medium text-gray-900">
-                          {livePos?.ltp != null ? `₹${livePos.ltp.toFixed(2)}` : '—'}
-                        </td>
-                        <td className="px-5 py-3.5">
-                          <span className={unPnl == null ? 'text-gray-400' : unPnl >= 0 ? 'text-emerald-600 font-medium' : 'text-red-600 font-medium'}>
-                            {unPnl == null ? '—' : (unPnl >= 0 ? '+' : '') + `₹${unPnl.toFixed(2)}`}
-                          </span>
-                        </td>
-                      </>
-                    )}
-                    <td className="px-5 py-3.5">
-                      {pos.breakevenSl != null ? (
-                        <span className="inline-flex flex-col gap-0.5">
-                          <span className="font-medium text-amber-600">{pos.breakevenSl.toFixed(2)}</span>
-                          <span className="text-xs text-amber-500">breakeven</span>
-                        </span>
-                      ) : (
-                        <span className="text-gray-600">{pos.signalStopLoss?.toFixed(2) ?? '—'}</span>
-                      )}
-                    </td>
-                    <td className="px-5 py-3.5 text-gray-600">{pos.signalTarget?.toFixed(2) ?? '—'}</td>
-                    {tab === 'ACTIVE' && (
-                      <td className="px-5 py-3.5">
-                        {pos.gttOrderId
-                          ? <Badge label="GTT Active" variant="indigo" />
-                          : <span className="text-xs text-gray-400">None</span>}
-                      </td>
-                    )}
-                    <td className="px-5 py-3.5">
-                      <Badge label={statusLabel(pos.status)} variant={statusVariant(pos.status)} />
-                    </td>
+                    {tab === 'ACTIVE'
+                      ? activeColumns.map(key => (
+                          <td key={key} className="px-5 py-3.5 whitespace-nowrap">{activeColumnCells[key](pos, livePos)}</td>
+                        ))
+                      : pendingColumns.map(key => (
+                          <td key={key} className="px-5 py-3.5 whitespace-nowrap">{pendingColumnCells[key](pos)}</td>
+                        ))
+                    }
                     <td className="px-5 py-3.5">
                       {pos.status === 'ACTIVE' && (
                         exiting === pos.id ? (

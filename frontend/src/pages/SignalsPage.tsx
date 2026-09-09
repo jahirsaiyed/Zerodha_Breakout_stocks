@@ -1,11 +1,21 @@
 import { useState } from 'react'
-import type { FormEvent } from 'react'
+import type { ChangeEvent, Dispatch, FormEvent, ReactNode, SetStateAction } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import api from '../lib/api'
 import type { OrderPreview, Position, Signal, SignalQuote, StopLossBasis } from '../lib/types'
 import { Badge, statusVariant, statusLabel } from '../components/Badge'
+import { CustomizePanel } from '../components/CustomizePanel'
+import { loadColumnOrder, saveVisibleKeys } from '../lib/columnPrefs'
+import {
+  DEFAULT_SIGNAL_COLUMNS,
+  SIGNAL_COLUMNS_STORAGE_KEY,
+  SIGNAL_COLUMN_LABELS,
+  type SignalColumnKey,
+} from '../lib/signalsColumns'
 
 const BASIS_OPTIONS: StopLossBasis[] = ['DAILY', 'HOURLY', 'WEEKLY']
+
+const SIGNAL_COLUMN_OPTIONS = DEFAULT_SIGNAL_COLUMNS.map(key => ({ key, label: SIGNAL_COLUMN_LABELS[key] }))
 
 const EMPTY = { symbol: '', entryPrice: '', stopLoss: '', target: '', closingBasis: 'DAILY' as StopLossBasis, notes: '' }
 
@@ -328,6 +338,14 @@ export function SignalsPage() {
   const [manualSignal, setManualSignal] = useState<Signal | null>(null)
   const [successMsg, setSuccessMsg] = useState('')
   const [actionError, setActionError] = useState('')
+  const [columns, setColumnsState] = useState<SignalColumnKey[]>(() =>
+    loadColumnOrder(SIGNAL_COLUMNS_STORAGE_KEY, DEFAULT_SIGNAL_COLUMNS, DEFAULT_SIGNAL_COLUMNS))
+
+  const handleColumnsChange = (keys: string[]) => {
+    const next = keys as SignalColumnKey[]
+    setColumnsState(next)
+    saveVisibleKeys(SIGNAL_COLUMNS_STORAGE_KEY, next)
+  }
 
   const { data: signals = [], isLoading } = useQuery<Signal[]>({
     queryKey: ['signals'],
@@ -445,6 +463,60 @@ export function SignalsPage() {
 
   const inputCls = 'w-full rounded border border-gray-200 bg-white px-2 py-1 text-sm focus:border-indigo-400 focus:outline-none focus:ring-1 focus:ring-indigo-400'
 
+  interface CellCtx {
+    isEditing: boolean
+    editState: EditState | null
+    setEditState: Dispatch<SetStateAction<EditState | null>>
+    setEdit: (k: keyof EditState) => (e: ChangeEvent<HTMLInputElement>) => void
+    quote: SignalQuote | undefined
+  }
+
+  const columnCells: Record<SignalColumnKey, (sig: Signal, ctx: CellCtx) => ReactNode> = {
+    entry: (sig, ctx) => ctx.isEditing && ctx.editState
+      ? <input value={ctx.editState.entryPrice} onChange={ctx.setEdit('entryPrice')} className={inputCls} />
+      : Number(sig.entryPrice).toFixed(2),
+    stopLoss: (sig, ctx) => ctx.isEditing && ctx.editState
+      ? <input value={ctx.editState.stopLoss} onChange={ctx.setEdit('stopLoss')} className={inputCls} />
+      : Number(sig.stopLoss).toFixed(2),
+    slBasis: (sig, ctx) => ctx.isEditing && ctx.editState
+      ? (
+        <select value={ctx.editState.closingBasis}
+          onChange={e => ctx.setEditState(prev => prev ? { ...prev, closingBasis: e.target.value as StopLossBasis } : prev)}
+          className={inputCls}>
+          {BASIS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+      )
+      : (
+        <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
+          {sig.closingBasis}
+        </span>
+      ),
+    target: (sig, ctx) => ctx.isEditing && ctx.editState
+      ? <input value={ctx.editState.target} onChange={ctx.setEdit('target')} className={inputCls} />
+      : Number(sig.target).toFixed(2),
+    riskReward: (sig, ctx) => ctx.isEditing
+      ? <span className="text-gray-400">—</span>
+      : `${Number(sig.riskRewardRatio).toFixed(2)}x`,
+    ltp: (sig, ctx) => {
+      if (ctx.isEditing) return <span className="text-gray-400">—</span>
+      return sig.status === 'ACTIVE' && ctx.quote?.ltp != null
+        ? <span className="font-medium text-gray-800">{Number(ctx.quote.ltp).toFixed(2)}</span>
+        : <span className="text-gray-300">—</span>
+    },
+    vsEntry: (sig, ctx) => {
+      if (ctx.isEditing) return <span className="text-gray-400">—</span>
+      return sig.status === 'ACTIVE' && ctx.quote?.diffFromEntryPct != null
+        ? (
+          <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${diffBg(ctx.quote.diffFromEntryPct)}`}>
+            {ctx.quote.diffFromEntryPct > 0 ? '+' : ''}{Number(ctx.quote.diffFromEntryPct).toFixed(2)}%
+          </span>
+        )
+        : <span className="text-gray-300">—</span>
+    },
+    source: sig => <Badge label={sig.source === 'MANUAL' ? 'Manual' : 'Sheet'} variant={sig.source === 'MANUAL' ? 'indigo' : 'blue'} />,
+    status: sig => <Badge label={statusLabel(sig.status)} variant={statusVariant(sig.status)} />,
+  }
+
   return (
     <div className="p-4 sm:p-8">
       {/* Modal */}
@@ -548,10 +620,18 @@ export function SignalsPage() {
 
       {/* Table */}
       <div className="rounded-xl border border-gray-200 bg-white">
-        <div className="border-b border-gray-200 px-5 py-4">
+        <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
           <h2 className="text-sm font-semibold text-gray-950">
             Active Signals <span className="ml-1 text-gray-400 font-normal">({active.length})</span>
           </h2>
+          <CustomizePanel
+            label="Customize columns"
+            options={SIGNAL_COLUMN_OPTIONS}
+            visibleKeys={columns}
+            onChange={handleColumnsChange}
+            defaultKeys={DEFAULT_SIGNAL_COLUMNS}
+            reorderOnly
+          />
         </div>
 
         {isLoading ? (
@@ -563,47 +643,32 @@ export function SignalsPage() {
           <table className="w-full text-sm">
             <thead className="sticky top-0 z-10 bg-white">
               <tr className="border-b border-gray-100 text-left">
-                {['#','Symbol','Entry','Stop Loss','SL Basis','Target','R:R','LTP','vs Entry','Source','Status',''].map(h => (
-                  <th key={h} className="px-5 py-3 text-xs font-medium text-gray-400">{h}</th>
+                <th className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">#</th>
+                <th className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">Symbol</th>
+                {columns.map(key => (
+                  <th key={key} className="px-5 py-3 text-xs font-medium text-gray-400 whitespace-nowrap">
+                    {SIGNAL_COLUMN_LABELS[key]}
+                  </th>
                 ))}
+                <th className="px-5 py-3 text-xs font-medium text-gray-400"></th>
               </tr>
             </thead>
             <tbody>
               {[...active, ...others].map(sig => {
                 const isEditing = editState?.id === sig.id
                 const q = quotesMap.get(sig.id)
+                const cellPadding = isEditing ? 'px-5 py-2' : 'px-5 py-3.5'
+                const cellCtx: CellCtx = { isEditing, editState, setEditState, setEdit, quote: q }
 
                 if (isEditing && editState) {
                   return (
                     <tr key={sig.id} className="border-b border-indigo-50 bg-indigo-50/30">
-                      <td className="px-5 py-2 text-gray-400">—</td>
-                      <td className="px-5 py-2 font-medium text-gray-900">{sig.symbol}</td>
-                      <td className="px-5 py-2">
-                        <input value={editState.entryPrice} onChange={setEdit('entryPrice')} className={inputCls} />
-                      </td>
-                      <td className="px-5 py-2">
-                        <input value={editState.stopLoss} onChange={setEdit('stopLoss')} className={inputCls} />
-                      </td>
-                      <td className="px-5 py-2">
-                        <select value={editState.closingBasis}
-                          onChange={e => setEditState(prev => prev ? { ...prev, closingBasis: e.target.value as StopLossBasis } : prev)}
-                          className={inputCls}>
-                          {BASIS_OPTIONS.map(b => <option key={b} value={b}>{b}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-5 py-2">
-                        <input value={editState.target} onChange={setEdit('target')} className={inputCls} />
-                      </td>
-                      <td className="px-5 py-2 text-gray-400">—</td>
-                      <td className="px-5 py-2 text-gray-400">—</td>
-                      <td className="px-5 py-2 text-gray-400">—</td>
-                      <td className="px-5 py-2">
-                        <Badge label={sig.source === 'MANUAL' ? 'Manual' : 'Sheet'} variant={sig.source === 'MANUAL' ? 'indigo' : 'blue'} />
-                      </td>
-                      <td className="px-5 py-2">
-                        <Badge label={statusLabel(sig.status)} variant={statusVariant(sig.status)} />
-                      </td>
-                      <td className="px-5 py-2">
+                      <td className={`${cellPadding} text-gray-400`}>—</td>
+                      <td className={`${cellPadding} font-medium text-gray-900`}>{sig.symbol}</td>
+                      {columns.map(key => (
+                        <td key={key} className={cellPadding}>{columnCells[key](sig, cellCtx)}</td>
+                      ))}
+                      <td className={cellPadding}>
                         <div className="flex flex-col gap-1">
                           <input value={editState.notes} onChange={setEdit('notes')} placeholder="Notes"
                             className={inputCls} />
@@ -643,35 +708,9 @@ export function SignalsPage() {
                         {new Date(sig.addedAt).toLocaleDateString('en-IN')}
                       </span>
                     </td>
-                    <td className="px-5 py-3.5 text-gray-600">{Number(sig.entryPrice).toFixed(2)}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{Number(sig.stopLoss).toFixed(2)}</td>
-                    <td className="px-5 py-3.5">
-                      <span className="inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium bg-slate-100 text-slate-600">
-                        {sig.closingBasis}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3.5 text-gray-600">{Number(sig.target).toFixed(2)}</td>
-                    <td className="px-5 py-3.5 text-gray-600">{Number(sig.riskRewardRatio).toFixed(2)}x</td>
-                    {/* LTP */}
-                    <td className="px-5 py-3.5">
-                      {sig.status === 'ACTIVE' && q?.ltp != null
-                        ? <span className="font-medium text-gray-800">{Number(q.ltp).toFixed(2)}</span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-                    {/* Diff from entry */}
-                    <td className="px-5 py-3.5">
-                      {sig.status === 'ACTIVE' && q?.diffFromEntryPct != null
-                        ? <span className={`inline-flex items-center rounded px-1.5 py-0.5 text-xs font-medium ${diffBg(q.diffFromEntryPct)}`}>
-                            {q.diffFromEntryPct > 0 ? '+' : ''}{Number(q.diffFromEntryPct).toFixed(2)}%
-                          </span>
-                        : <span className="text-gray-300">—</span>}
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Badge label={sig.source === 'MANUAL' ? 'Manual' : 'Sheet'} variant={sig.source === 'MANUAL' ? 'indigo' : 'blue'} />
-                    </td>
-                    <td className="px-5 py-3.5">
-                      <Badge label={statusLabel(sig.status)} variant={statusVariant(sig.status)} />
-                    </td>
+                    {columns.map(key => (
+                      <td key={key} className="px-5 py-3.5 text-gray-600 whitespace-nowrap">{columnCells[key](sig, cellCtx)}</td>
+                    ))}
                     <td className="px-5 py-3.5">
                       <div className="flex gap-2">
                         {/* Trade button — visible for ACTIVE signals without an existing position */}
