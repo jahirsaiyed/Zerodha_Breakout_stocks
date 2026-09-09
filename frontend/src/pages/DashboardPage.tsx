@@ -141,9 +141,9 @@ export function DashboardPage() {
             variant={config?.zerodhaConnected ? 'green' : 'gray'}
           />
           {!config?.zerodhaConnected && (
-            <Link to="/settings" className="text-xs text-indigo-600 hover:text-indigo-700">
+            <a href="/api/zerodha/login" className="text-xs text-indigo-600 hover:text-indigo-700">
               Reconnect →
-            </Link>
+            </a>
           )}
         </div>
       </div>
