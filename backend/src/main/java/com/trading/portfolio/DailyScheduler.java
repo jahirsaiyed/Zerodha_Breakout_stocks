@@ -1,6 +1,7 @@
 package com.trading.portfolio;
 
 import com.trading.notifications.NotificationService;
+import com.trading.portfolio.dto.LivePositionResponse;
 import com.trading.signals.Position;
 import com.trading.signals.PositionRepository;
 import com.trading.signals.PositionStatus;
@@ -18,6 +19,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * IST-zoned daily jobs:
@@ -34,6 +38,9 @@ public class DailyScheduler {
 
     private static final ZoneId IST = ZoneId.of("Asia/Kolkata");
 
+    /** Caps the per-position lines in the Telegram summary to stay under Telegram's 4096-char message limit. */
+    private static final int MAX_LISTED_POSITIONS = 25;
+
     private static final List<PositionStatus> CLOSED_STATUSES = List.of(
             PositionStatus.CLOSED_TARGET,
             PositionStatus.CLOSED_SL,
@@ -43,6 +50,7 @@ public class DailyScheduler {
     private final UserConfigRepository userConfigRepository;
     private final PositionRepository   positionRepository;
     private final NotificationService  notificationService;
+    private final LivePriceService     livePriceService;
 
     // ── 6:15 AM IST — Bulk-expire Zerodha tokens ─────────────────────────────
 
@@ -107,7 +115,7 @@ public class DailyScheduler {
     private void buildAndSendSummary(UserConfig config, LocalDateTime startOfDay) {
         Long userId = config.getUser().getId();
 
-        long active  = positionRepository.countByUserIdAndStatusIn(userId, List.of(PositionStatus.ACTIVE));
+        List<Position> activePositions = positionRepository.findByUserIdAndStatus(userId, PositionStatus.ACTIVE);
         long pending = positionRepository.countByUserIdAndStatusIn(userId, List.of(PositionStatus.PENDING_ENTRY));
 
         List<Position> closedToday = positionRepository
@@ -123,18 +131,18 @@ public class DailyScheduler {
         StringBuilder msg = new StringBuilder();
         msg.append("Daily Summary\n");
         msg.append("─────────────────\n");
-        msg.append("Active positions: ").append(active).append("\n");
+        msg.append("Active positions: ").append(activePositions.size()).append("\n");
         msg.append("Pending entry:    ").append(pending).append("\n");
         msg.append("\n");
+
+        appendOpenPositions(msg, config, activePositions);
 
         if (closedToday.isEmpty()) {
             msg.append("No trades closed today.");
         } else {
             msg.append("Closed today: ").append(closedToday.size())
                .append(" trade(s)  ").append(wins).append("W / ").append(losses).append("L\n");
-            String sign = todayPnl.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
-            msg.append("Today P&L: ").append(sign)
-               .append(todayPnl.setScale(2, RoundingMode.HALF_UP).toPlainString());
+            msg.append("Today P&L: ").append(signed(todayPnl));
             msg.append("\n\nTrades closed today:");
             for (Position p : closedToday) {
                 String outcome = switch (p.getStatus()) {
@@ -142,16 +150,69 @@ public class DailyScheduler {
                     case CLOSED_SL     -> "SL hit";
                     default            -> "Manual";
                 };
-                String pnlStr = p.getRealisedPnl() != null
-                        ? (p.getRealisedPnl().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "")
-                          + p.getRealisedPnl().setScale(2, RoundingMode.HALF_UP).toPlainString()
-                        : "—";
                 msg.append("\n  ").append(p.getSymbol())
                    .append("  ").append(outcome)
-                   .append("  ₹").append(pnlStr);
+                   .append("  ₹").append(signed(p.getRealisedPnl()));
             }
         }
 
         notificationService.notifyUser(userId, msg.toString());
+    }
+
+    /**
+     * Appends an "Open Positions" section listing each ACTIVE position's live LTP and
+     * unrealised P&L, plus a total. LTPs come from the user's connected broker (holdings +
+     * day positions); a position shows "—" instead of a price/P&L when unavailable
+     * (Zerodha disconnected, token expired, etc.) rather than failing the whole summary.
+     */
+    private void appendOpenPositions(StringBuilder msg, UserConfig config, List<Position> activePositions) {
+        if (activePositions.isEmpty()) return;
+
+        Set<String> symbols = activePositions.stream().map(Position::getSymbol).collect(Collectors.toSet());
+        Map<String, BigDecimal> prices = livePriceService.getLivePrices(config, symbols);
+
+        List<LivePositionResponse> live = activePositions.stream()
+                .map(p -> LivePositionResponse.of(p, prices.get(p.getSymbol())))
+                .toList();
+
+        BigDecimal totalUnrealised = BigDecimal.ZERO;
+        int missingPriceCount = 0;
+
+        msg.append("Open Positions:\n");
+        for (int i = 0; i < live.size(); i++) {
+            LivePositionResponse lp = live.get(i);
+            if (lp.unrealisedPnl() != null) {
+                totalUnrealised = totalUnrealised.add(lp.unrealisedPnl());
+            } else {
+                missingPriceCount++;
+            }
+            if (i < MAX_LISTED_POSITIONS) {
+                msg.append("  ").append(lp.symbol())
+                   .append("  qty=").append(lp.quantity())
+                   .append("  entry=").append(fmt(lp.avgEntryPrice()))
+                   .append("  ltp=").append(fmt(lp.ltp()))
+                   .append("  P&L=").append(signed(lp.unrealisedPnl()))
+                   .append("\n");
+            }
+        }
+        if (live.size() > MAX_LISTED_POSITIONS) {
+            msg.append("  ...and ").append(live.size() - MAX_LISTED_POSITIONS).append(" more\n");
+        }
+
+        msg.append("Total unrealised P&L: ").append(signed(totalUnrealised));
+        if (missingPriceCount > 0) {
+            msg.append("  (").append(missingPriceCount).append(" position(s) priced unavailable)");
+        }
+        msg.append("\n\n");
+    }
+
+    private static String fmt(BigDecimal value) {
+        return value == null ? "—" : value.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private static String signed(BigDecimal value) {
+        if (value == null) return "—";
+        String sign = value.compareTo(BigDecimal.ZERO) >= 0 ? "+" : "";
+        return sign + value.setScale(2, RoundingMode.HALF_UP).toPlainString();
     }
 }

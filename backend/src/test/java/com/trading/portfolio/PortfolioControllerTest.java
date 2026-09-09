@@ -32,7 +32,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(PortfolioController.class)
-@Import(com.trading.config.SecurityConfig.class)
+@Import({com.trading.config.SecurityConfig.class, LivePriceService.class})
 @TestPropertySource(properties = {
         "cors.allowed-origins=http://localhost:3000",
         "jwt.secret=test-secret-key-that-is-at-least-64-characters-long-for-hmac-sha"
