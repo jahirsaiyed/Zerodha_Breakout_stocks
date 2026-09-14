@@ -41,6 +41,7 @@ class PortfolioEngineTest {
     @Mock private ApplicationEventPublisher events;
     @Mock private BrokerAdapter broker;
     @Mock private SignalService signalService;
+    @Mock private LivePriceService livePriceService;
 
     @InjectMocks
     private PortfolioEngine engine;
@@ -789,8 +790,8 @@ class PortfolioEngineTest {
     }
 
     @Test
-    @DisplayName("checkClosingBasisStopLoss skips SL check (not the whole user) when quotes fetch is permission-denied")
-    void checkClosingBasisStopLoss_quotesPermissionDenied_skipsSlCheckOnly() {
+    @DisplayName("checkClosingBasisStopLoss falls back to LivePriceService when quotes fetch is permission-denied")
+    void checkClosingBasisStopLoss_quotesPermissionDenied_fallsBackToLivePrices() {
         Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
         Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
 
@@ -798,6 +799,27 @@ class PortfolioEngineTest {
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
         when(broker.getQuotes(any())).thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+        when(livePriceService.getLivePrices(eq(userConfig), eq(Set.of("RELIANCE"))))
+                .thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2250))); // below SL 2300
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString())).thenReturn("SELL999");
+
+        engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
+
+        verify(broker).placeMarketSellOrder(eq("RELIANCE"), eq(4), anyString());
+        verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_SL), any());
+    }
+
+    @Test
+    @DisplayName("checkClosingBasisStopLoss skips SL check only when both quotes and LivePriceService have no price")
+    void checkClosingBasisStopLoss_noPriceFromEitherSource_skipsSlCheckOnly() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositionsByBasis(StopLossBasis.DAILY)).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenThrow(new BrokerTokenException("Insufficient permission for that call."));
+        when(livePriceService.getLivePrices(eq(userConfig), eq(Set.of("RELIANCE")))).thenReturn(Map.of());
 
         engine.checkClosingBasisStopLoss(StopLossBasis.DAILY);
 

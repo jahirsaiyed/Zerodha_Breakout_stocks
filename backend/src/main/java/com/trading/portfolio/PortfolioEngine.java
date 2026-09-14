@@ -44,6 +44,7 @@ public class PortfolioEngine {
     private final PositionSizingService sizingService;
     private final ApplicationEventPublisher events;
     private final SignalService signalService;
+    private final LivePriceService livePriceService;
 
     // ── Core loop ────────────────────────────────────────────────────────────
 
@@ -578,7 +579,7 @@ public class PortfolioEngine {
                     BrokerAdapter broker = brokerAdapterFactory.forUser(config);
                     List<String> symbols = entry.getValue().stream()
                             .map(Position::getSymbol).distinct().toList();
-                    Map<String, BigDecimal> quotes = fetchQuotesSafe(broker, symbols, entry.getKey(), basis.name());
+                    Map<String, BigDecimal> quotes = fetchQuotesSafe(broker, config, symbols, basis.name());
                     for (Position pos : entry.getValue()) {
                         try {
                             checkSlForPosition(pos, broker, quotes, basis);
@@ -594,17 +595,33 @@ public class PortfolioEngine {
         log.info("[SL-{}] DONE", basis);
     }
 
-    private Map<String, BigDecimal> fetchQuotesSafe(BrokerAdapter broker, List<String> symbols,
-                                                     Long userId, String tag) {
+    /**
+     * Fetches LTP for the given symbols via the broker's quote API, falling back to
+     * {@link LivePriceService} (holdings + day positions — no quote subscription required)
+     * for any symbol the quote API couldn't price. All checked positions are held, so this
+     * fallback covers API keys lacking quote-API permission without skipping the SL check.
+     */
+    private Map<String, BigDecimal> fetchQuotesSafe(BrokerAdapter broker, UserConfig config,
+                                                     List<String> symbols, String tag) {
+        Long userId = config.getUser().getId();
+        Map<String, BigDecimal> quotes;
         try {
-            return broker.getQuotes(symbols);
+            quotes = new HashMap<>(broker.getQuotes(symbols));
         } catch (BrokerTokenException e) {
-            log.warn("[SL-{}] user={} quotes unavailable (permission denied) — skipping SL check", tag, userId);
-            return Map.of();
+            log.warn("[SL-{}] user={} quotes unavailable (permission denied) — falling back to live holdings prices", tag, userId);
+            quotes = new HashMap<>();
         } catch (BrokerNetworkException e) {
-            log.warn("[SL-{}] user={} quotes fetch failed: {} — skipping SL check", tag, userId, e.getMessage());
-            return Map.of();
+            log.warn("[SL-{}] user={} quotes fetch failed: {} — falling back to live holdings prices", tag, userId, e.getMessage());
+            quotes = new HashMap<>();
         }
+
+        Map<String, BigDecimal> fetched = quotes;
+        Set<String> missing = symbols.stream().filter(s -> !fetched.containsKey(s)).collect(Collectors.toSet());
+        if (!missing.isEmpty()) {
+            Map<String, BigDecimal> fallback = livePriceService.getLivePrices(config, missing);
+            quotes.putAll(fallback);
+        }
+        return quotes;
     }
 
     private void checkSlForPosition(Position pos, BrokerAdapter broker,
