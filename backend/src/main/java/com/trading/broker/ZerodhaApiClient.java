@@ -90,7 +90,7 @@ public class ZerodhaApiClient {
             form.add("validity", "DAY");
             form.add("tag", tag);
 
-            JsonNode data = postForm("/orders/regular", form);
+            JsonNode data = postForm(orderBaseUrl, "/orders/regular", form);
             return data.path("order_id").asText();
         });
     }
@@ -107,7 +107,7 @@ public class ZerodhaApiClient {
             form.add("validity", "DAY");
             form.add("tag", tag);
 
-            JsonNode data = postForm("/orders/regular", form);
+            JsonNode data = postForm(orderBaseUrl, "/orders/regular", form);
             return data.path("order_id").asText();
         });
     }
@@ -137,7 +137,7 @@ public class ZerodhaApiClient {
                     "orders", orders
             );
 
-            JsonNode data = postJson("/gtt/triggers", body);
+            JsonNode data = postJson(orderBaseUrl, "/gtt/triggers", body);
             return data.path("trigger_id").asText();
         });
     }
@@ -163,21 +163,21 @@ public class ZerodhaApiClient {
                     "orders", orders
             );
 
-            JsonNode data = postJson("/gtt/triggers", body);
+            JsonNode data = postJson(orderBaseUrl, "/gtt/triggers", body);
             return data.path("trigger_id").asText();
         });
     }
 
     public void cancelOrder(String orderId) {
         executeWithRetry(() -> {
-            delete("/orders/regular/" + orderId);
+            delete(orderBaseUrl, "/orders/regular/" + orderId);
             return null;
         });
     }
 
     public void cancelGttOrder(String gttId) {
         executeWithRetry(() -> {
-            delete("/gtt/triggers/" + gttId);
+            delete(orderBaseUrl, "/gtt/triggers/" + gttId);
             return null;
         });
     }
@@ -340,10 +340,6 @@ public class ZerodhaApiClient {
         return parseResponse(response);
     }
 
-    private JsonNode postForm(String path, MultiValueMap<String, String> form) {
-        return postForm(baseUrl, path, form);
-    }
-
     private JsonNode postForm(String base, String path, MultiValueMap<String, String> form) {
         HttpHeaders headers = authHeaders();
         headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
@@ -353,18 +349,18 @@ public class ZerodhaApiClient {
         return parseResponse(response);
     }
 
-    private JsonNode postJson(String path, Object body) {
+    private JsonNode postJson(String base, String path, Object body) {
         HttpHeaders headers = authHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         ResponseEntity<JsonNode> response = restTemplate.exchange(
-                baseUrl + path, HttpMethod.POST,
+                base + path, HttpMethod.POST,
                 new HttpEntity<>(body, headers), JsonNode.class);
         return parseResponse(response);
     }
 
-    private void delete(String path) {
+    private void delete(String base, String path) {
         ResponseEntity<JsonNode> response = restTemplate.exchange(
-                baseUrl + path, HttpMethod.DELETE,
+                base + path, HttpMethod.DELETE,
                 new HttpEntity<>(authHeaders()), JsonNode.class);
         parseResponse(response);
     }
@@ -413,7 +409,9 @@ public class ZerodhaApiClient {
     private boolean isPermanentNetworkError(String message) {
         if (message == null) return false;
         String lower = message.toLowerCase();
-        return lower.contains("no static ip") || lower.contains("static ip not set");
+        return lower.contains("no static ip")
+                || lower.contains("static ip not set")
+                || lower.contains("is not allowed to place orders");
     }
 
     private boolean isOrderNotFoundError(String message) {
