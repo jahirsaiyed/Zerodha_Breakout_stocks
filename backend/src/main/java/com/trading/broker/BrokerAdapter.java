@@ -30,6 +30,15 @@ public interface BrokerAdapter {
     String placeMarketSellOrder(String symbol, int quantity, String tag);
 
     /**
+     * Places a protected CNC "market" sell order — a LIMIT order priced just below the given
+     * last traded price — used to close a position on demand. Kite Connect rejects bare MARKET
+     * orders via the API ("Market orders without market protection are not allowed via API"),
+     * so callers with a fresh LTP should prefer this over {@link #placeMarketSellOrder(String, int, String)}.
+     * @return broker-assigned order ID
+     */
+    String placeMarketSellOrder(String symbol, int quantity, BigDecimal ltp, String tag);
+
+    /**
      * Places a CNC market buy order (used to add quantity to an existing position).
      * @return broker-assigned order ID
      */

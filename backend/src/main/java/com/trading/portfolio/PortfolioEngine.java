@@ -767,10 +767,17 @@ public class PortfolioEngine {
             catch (Exception e) { log.warn("[MANUAL] could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
         }
 
-        // Place CNC market sell order to actually exit the position.
-        // Do NOT mark the DB position closed if the broker call fails — the stock is still held.
+        // Place a protected CNC "market" sell (LIMIT priced off LTP — see ZerodhaApiClient) to
+        // actually exit the position. Do NOT mark the DB position closed if the broker call
+        // fails — the stock is still held.
         String tag = "pos_" + positionId + "_manual";
-        String sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), tag);
+        Map<String, BigDecimal> quotes = fetchQuotesSafe(broker, config, List.of(pos.getSymbol()), tag);
+        BigDecimal ltp = quotes.get(pos.getSymbol());
+        if (ltp == null) {
+            throw new IllegalStateException("Could not fetch a live price for " + pos.getSymbol()
+                    + " — cannot place a protected exit order. Try again shortly.");
+        }
+        String sellOrderId = broker.placeMarketSellOrder(pos.getSymbol(), pos.getQuantity(), ltp, tag);
         db.recordManualExitOrder(positionId, sellOrderId);
         log.info("[MANUAL] market sell placed pos={} symbol={} qty={} order={}",
                 positionId, pos.getSymbol(), pos.getQuantity(), sellOrderId);
