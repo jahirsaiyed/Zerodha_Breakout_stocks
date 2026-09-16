@@ -409,6 +409,56 @@ class PortfolioEngineTest {
                 .hasMessageContaining("99");
     }
 
+    // ── recordManualExit ─────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("recordManualExit cancels GTT, records the sale, closes position with computed pnl — no broker sell call")
+    void recordManualExit_activePosition_closesWithoutBrokerCall() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2400));
+        pos.setQuantity(4);
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+
+        engine.recordManualExit(10L, BigDecimal.valueOf(2450));
+
+        verify(broker).cancelGttOrder("GTT456");
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), any(BigDecimal.class), anyString());
+        verify(db).recordRemoveOrder(10L, userConfig, null, 4, BigDecimal.valueOf(2450), OrderKind.MANUAL);
+        verify(db).closePosition(10L, PositionStatus.CLOSED_MANUAL, BigDecimal.valueOf(200));
+        verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
+    }
+
+    @Test
+    @DisplayName("recordManualExit tolerates a GTT cancel failure (already gone/triggered)")
+    void recordManualExit_gttCancelFails_stillCloses() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2400));
+
+        when(db.getPositionById(10L)).thenReturn(Optional.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        doThrow(new RuntimeException("already triggered")).when(broker).cancelGttOrder("GTT456");
+
+        engine.recordManualExit(10L, BigDecimal.valueOf(2450));
+
+        verify(db).closePosition(eq(10L), eq(PositionStatus.CLOSED_MANUAL), any(BigDecimal.class));
+    }
+
+    @Test
+    @DisplayName("recordManualExit throws when position is not ACTIVE")
+    void recordManualExit_positionNotActive_throws() {
+        when(db.getPositionById(10L)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> engine.recordManualExit(10L, BigDecimal.valueOf(2450)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("10");
+
+        verify(db, never()).closePosition(any(), any(), any());
+    }
+
     // ── addQuantity / removeQuantity ────────────────────────────────────────
 
     @Test
