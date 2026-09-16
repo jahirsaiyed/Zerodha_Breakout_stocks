@@ -8,6 +8,7 @@ import com.trading.portfolio.dto.LivePositionResponse;
 import com.trading.portfolio.dto.OrderPreviewResponse;
 import com.trading.portfolio.dto.OrderResponse;
 import com.trading.portfolio.dto.PositionResponse;
+import com.trading.portfolio.dto.RecordExitRequest;
 import com.trading.signals.Order;
 import com.trading.signals.OrderRepository;
 import com.trading.signals.Position;
@@ -143,6 +144,22 @@ public class PortfolioController {
                 .orElseThrow();
 
         return ResponseEntity.ok(PositionResponse.from(updated));
+    }
+
+    /**
+     * POST /api/portfolio/positions/{id}/record-exit
+     * Records a position already closed directly in Zerodha — no broker order is placed. Use
+     * this when /exit fails with "Insufficient stock holding" because the shares are already gone.
+     */
+    @PostMapping("/positions/{id}/record-exit")
+    public ResponseEntity<PositionResponse> recordExit(
+            @PathVariable Long id,
+            @RequestBody @Valid RecordExitRequest req,
+            Authentication auth) {
+
+        Position pos = requireOwnedActivePosition(id, resolveUserId(auth));
+        engine.recordManualExit(pos.getId(), req.exitPrice());
+        return ResponseEntity.ok(PositionResponse.from(db.getPositionById(id).orElseThrow()));
     }
 
     /**

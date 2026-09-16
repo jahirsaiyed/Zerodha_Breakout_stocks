@@ -28,6 +28,7 @@ import java.util.stream.Collectors;
  *   <li>{@link #reconcileGttExits()} — detects triggered GTT exits</li>
  *   <li>{@link #detectUnmanagedPositions()} — alerts on Zerodha holdings not tracked</li>
  *   <li>{@link #manualExit(Long)} — user-initiated market sell</li>
+ *   <li>{@link #recordManualExit(Long, BigDecimal)} — records a close already done in Zerodha</li>
  * </ul>
  */
 @Slf4j
@@ -786,6 +787,37 @@ public class PortfolioEngine {
         events.publishEvent(new PositionClosedEvent(positionId, pos.getSymbol(),
                 PositionStatus.CLOSED_MANUAL, null));
         log.info("[MANUAL] DONE pos={} symbol={}", positionId, pos.getSymbol());
+    }
+
+    /**
+     * Same as {@link #manualExit}, for a position already closed directly in Zerodha — no broker
+     * order is placed. Needed because a live sell order (manualExit) is rejected by Zerodha with
+     * "Insufficient stock holding" once the holding is already gone, which would otherwise leave
+     * the position stuck ACTIVE in this app forever with no way to close it.
+     */
+    public Long recordManualExit(Long positionId, BigDecimal exitPrice) {
+        Position pos = requireActivePosition(positionId);
+        UserConfig config = requireConfig(pos);
+
+        log.info("[MANUAL] START (record) pos={} symbol={} user={} exitPrice={}",
+                positionId, pos.getSymbol(), pos.getUser().getId(), exitPrice);
+        BrokerAdapter broker = brokerAdapterFactory.forUser(config);
+
+        // Cancel GTT so it doesn't fire against a position that no longer exists
+        if (pos.getGttOrderId() != null) {
+            try { broker.cancelGttOrder(pos.getGttOrderId()); }
+            catch (Exception e) { log.warn("[MANUAL] could not cancel GTT {}: {}", pos.getGttOrderId(), e.getMessage()); }
+        }
+
+        db.recordRemoveOrder(positionId, config, null, pos.getQuantity(), exitPrice, OrderKind.MANUAL);
+
+        BigDecimal realisedPnl = exitPrice.subtract(pos.getAvgEntryPrice())
+                .multiply(BigDecimal.valueOf(pos.getQuantity()));
+        db.closePosition(positionId, PositionStatus.CLOSED_MANUAL, realisedPnl);
+        events.publishEvent(new PositionClosedEvent(positionId, pos.getSymbol(),
+                PositionStatus.CLOSED_MANUAL, realisedPnl));
+        log.info("[MANUAL] DONE (record) pos={} symbol={} pnl={}", positionId, pos.getSymbol(), realisedPnl);
+        return positionId;
     }
 
     // ── Quantity adjustment (add/remove on an existing ACTIVE position) ────────

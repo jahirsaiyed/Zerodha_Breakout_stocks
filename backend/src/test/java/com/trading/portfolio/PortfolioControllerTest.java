@@ -116,6 +116,55 @@ class PortfolioControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/record-exit records a close already done in Zerodha")
+    void recordExit_validPosition_returns200() throws Exception {
+        Position pos = buildPosition();
+        pos.setId(10L);
+
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(engine.recordManualExit(10L, new BigDecimal("2450.00"))).thenReturn(10L);
+
+        Position closed = buildPosition();
+        closed.setId(10L);
+        closed.setStatus(PositionStatus.CLOSED_MANUAL);
+        when(db.getPositionById(10L)).thenReturn(Optional.of(closed));
+
+        mockMvc.perform(post("/api/portfolio/positions/10/record-exit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"exitPrice\":2450.00}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CLOSED_MANUAL"));
+
+        verify(engine).recordManualExit(10L, new BigDecimal("2450.00"));
+    }
+
+    @Test
+    @WithMockUser(username = "user@example.com")
+    @DisplayName("POST /api/portfolio/positions/{id}/record-exit returns 400 for non-existent position")
+    void recordExit_positionNotFound_returns400() throws Exception {
+        when(db.getUserIdByEmail("user@example.com")).thenReturn(1L);
+        when(db.getActivePositions()).thenReturn(List.of());
+
+        mockMvc.perform(post("/api/portfolio/positions/99/record-exit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"exitPrice\":2450.00}"))
+                .andExpect(status().isBadRequest());
+
+        verify(engine, never()).recordManualExit(any(), any());
+    }
+
+    @Test
+    @DisplayName("POST /api/portfolio/positions/{id}/record-exit requires authentication")
+    void recordExit_unauthenticated_returns403() throws Exception {
+        mockMvc.perform(post("/api/portfolio/positions/10/record-exit")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"exitPrice\":2450.00}"))
+                .andExpect(status().isForbidden());
+    }
+
     // ── POST /api/portfolio/positions/{id}/add-quantity & remove-quantity ──────
 
     @Test

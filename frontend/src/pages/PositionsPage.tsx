@@ -425,10 +425,126 @@ function AdjustQuantityModal({ position, onClose, onSuccess }: AdjustQuantityMod
   )
 }
 
+// ── Close Modal (full exit — live order or record-only) ─────────────────────
+
+interface CloseModalProps {
+  position: Position
+  onClose: () => void
+  onSuccess: (msg: string) => void
+}
+
+function CloseModal({ position, onClose, onSuccess }: CloseModalProps) {
+  const qc = useQueryClient()
+  const [mode, setMode] = useState<AdjustMode>('LIVE')
+  const [exitPrice, setExitPrice] = useState('')
+
+  const close = useMutation({
+    mutationFn: () => mode === 'LIVE'
+      ? api.post(`/portfolio/positions/${position.id}/exit`)
+      : api.post(`/portfolio/positions/${position.id}/record-exit`, { exitPrice: Number(exitPrice) }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['positions-live'] })
+      qc.invalidateQueries({ queryKey: ['orders'] })
+      onSuccess(`Closed ${position.symbol}${mode === 'MANUAL' ? ' (recorded)' : ''}.`)
+      onClose()
+    },
+  })
+
+  const priceValid = mode === 'LIVE' || Number(exitPrice) > 0
+  const canSubmit = priceValid && !close.isPending
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+         onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white shadow-xl">
+
+        {/* Header */}
+        <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-gray-400">Close Position</p>
+            <h2 className="text-lg font-semibold text-gray-900">{position.symbol}</h2>
+          </div>
+          <button onClick={onClose}
+            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600">
+            <svg className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-6 py-5">
+          <p className="mb-4 text-xs text-gray-400">
+            Quantity: <span className="font-medium text-gray-700">{position.quantity}</span>
+            {' '}@ avg ₹{position.avgEntryPrice?.toFixed(2) ?? '—'}
+          </p>
+
+          {/* Mode toggle */}
+          <div className="mb-4 flex items-center gap-4 text-sm text-gray-700">
+            <label className="flex items-center gap-1.5">
+              <input type="radio" name="close-mode" checked={mode === 'LIVE'} onChange={() => setMode('LIVE')} />
+              Place order via Zerodha
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="radio" name="close-mode" checked={mode === 'MANUAL'} onChange={() => setMode('MANUAL')} />
+              Record only (already closed in Kite)
+            </label>
+          </div>
+
+          {mode === 'MANUAL' ? (
+            <>
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                <svg className="mt-0.5 h-4 w-4 flex-shrink-0 text-amber-500" viewBox="0 0 20 20" fill="currentColor">
+                  <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                </svg>
+                <p className="text-sm text-amber-800">
+                  This does <strong>not</strong> place an order in Zerodha — only use this after you've
+                  already sold the shares yourself in Kite. Use this if closing from the app fails with
+                  "Insufficient stock holding" because the position was already closed directly in Kite.
+                </p>
+              </div>
+              <div>
+                <label className="mb-1 block text-sm font-medium text-gray-700">Sale price (₹)</label>
+                <input type="number" min={0} step={0.01} value={exitPrice}
+                  onChange={e => setExitPrice(e.target.value)} placeholder="e.g. 2450" className={inputCls} />
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-gray-600">
+              Places a live protected market sell for all {position.quantity} share{position.quantity === 1 ? '' : 's'} of {position.symbol}.
+            </p>
+          )}
+
+          {close.isError && (
+            <p className="mt-3 text-sm text-red-600">
+              {(close.error as any)?.response?.data?.error ?? 'Could not close position'}
+            </p>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-3 border-t border-gray-100 px-6 py-4">
+          <button onClick={onClose}
+            className="rounded-lg border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">
+            Cancel
+          </button>
+          <button
+            onClick={() => close.mutate()}
+            disabled={!canSubmit}
+            className="rounded-lg bg-red-500 px-4 py-2 text-sm font-medium text-white transition-colors
+                       hover:bg-red-600 disabled:cursor-not-allowed disabled:opacity-50">
+            {close.isPending ? 'Closing…' : 'Close Position'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function PositionsPage() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<Tab>('ACTIVE')
-  const [exiting, setExiting] = useState<number | null>(null)
+  const [closingPosition, setClosingPosition] = useState<Position | null>(null)
   const [cancelling, setCancelling] = useState<number | null>(null)
   const [confirmingFill, setConfirmingFill] = useState<Position | null>(null)
   const [recordingManualTrade, setRecordingManualTrade] = useState(false)
@@ -465,17 +581,6 @@ export function PositionsPage() {
   })
 
   const liveMap = new Map(live.map(p => [p.id, p]))
-
-  const exit = useMutation({
-    mutationFn: (id: number) => api.post(`/portfolio/positions/${id}/exit`),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['positions'] })
-      qc.invalidateQueries({ queryKey: ['positions-live'] })
-      setExiting(null)
-      setActionError('')
-    },
-    onError: (e: any) => setActionError(e.response?.data?.error ?? 'Failed to exit position'),
-  })
 
   const cancel = useMutation({
     mutationFn: (id: number) => api.post(`/portfolio/positions/${id}/cancel`),
@@ -646,32 +751,18 @@ export function PositionsPage() {
                     }
                     <td className="px-5 py-3.5">
                       {pos.status === 'ACTIVE' && (
-                        exiting === pos.id ? (
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-500">Confirm close?</span>
-                            <button onClick={() => exit.mutate(pos.id)}
-                              className="rounded-md bg-red-500 px-2.5 py-1 text-xs font-medium text-white hover:bg-red-600">
-                              Yes
-                            </button>
-                            <button onClick={() => setExiting(null)}
-                              className="rounded-md border border-gray-200 px-2.5 py-1 text-xs hover:bg-gray-50">
-                              No
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <button onClick={() => setAdjustingQty(pos)}
-                              className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
-                                         transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600">
-                              Adjust Qty
-                            </button>
-                            <button onClick={() => setExiting(pos.id)}
-                              className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
-                                         transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
-                              Close
-                            </button>
-                          </div>
-                        )
+                        <div className="flex items-center gap-2">
+                          <button onClick={() => setAdjustingQty(pos)}
+                            className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
+                                       transition-colors hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-600">
+                            Adjust Qty
+                          </button>
+                          <button onClick={() => setClosingPosition(pos)}
+                            className="rounded-md border border-gray-200 px-3 py-1 text-xs text-gray-600
+                                       transition-colors hover:border-red-200 hover:bg-red-50 hover:text-red-600">
+                            Close
+                          </button>
+                        </div>
                       )}
                       {pos.status === 'PENDING_ENTRY' && (
                         cancelling === pos.id ? (
@@ -737,6 +828,18 @@ export function PositionsPage() {
         <AdjustQuantityModal
           position={adjustingQty}
           onClose={() => setAdjustingQty(null)}
+          onSuccess={msg => {
+            setActionError('')
+            setSuccessMsg(msg)
+            setTimeout(() => setSuccessMsg(''), 8000)
+          }}
+        />
+      )}
+
+      {closingPosition && (
+        <CloseModal
+          position={closingPosition}
+          onClose={() => setClosingPosition(null)}
           onSuccess={msg => {
             setActionError('')
             setSuccessMsg(msg)
