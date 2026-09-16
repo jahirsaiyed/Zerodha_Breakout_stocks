@@ -30,6 +30,12 @@ public class ZerodhaBrokerAdapter implements BrokerAdapter {
     }
 
     @Override
+    public String placeMarketSellOrder(String symbol, int quantity, BigDecimal ltp, String tag) {
+        log.debug("Placing protected market sell: symbol={} qty={} ltp={} tag={}", symbol, quantity, ltp, tag);
+        return apiClient.placeMarketSellOrder(symbol, quantity, ltp, tag);
+    }
+
+    @Override
     public String placeMarketBuyOrder(String symbol, int quantity, String tag) {
         log.debug("Placing market buy: symbol={} qty={} tag={}", symbol, quantity, tag);
         return apiClient.placeMarketBuyOrder(symbol, quantity, tag);

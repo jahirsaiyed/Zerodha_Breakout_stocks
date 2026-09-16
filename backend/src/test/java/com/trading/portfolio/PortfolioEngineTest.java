@@ -343,12 +343,14 @@ class PortfolioEngineTest {
         when(db.getActivePositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
-        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString())).thenReturn("sellOrder789");
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2410)));
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), any(BigDecimal.class), anyString()))
+                .thenReturn("sellOrder789");
 
         engine.manualExit(10L);
 
         verify(broker).cancelGttOrder("GTT456");
-        verify(broker).placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString());
+        verify(broker).placeMarketSellOrder(eq("RELIANCE"), anyInt(), any(BigDecimal.class), anyString());
         verify(db).recordManualExitOrder(10L, "sellOrder789");
         verify(db).closePosition(10L, PositionStatus.CLOSED_MANUAL, null);
         verify(events).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
@@ -363,7 +365,8 @@ class PortfolioEngineTest {
         when(db.getActivePositions()).thenReturn(List.of(pos));
         when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
         when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
-        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), anyString()))
+        when(broker.getQuotes(any())).thenReturn(Map.of("RELIANCE", BigDecimal.valueOf(2410)));
+        when(broker.placeMarketSellOrder(eq("RELIANCE"), anyInt(), any(BigDecimal.class), anyString()))
                 .thenThrow(new BrokerOrderException("Insufficient holdings"));
 
         // Broker failure must propagate — DB position must NOT be closed
@@ -374,6 +377,26 @@ class PortfolioEngineTest {
         verify(db, never()).closePosition(any(), any(), any());
         verify(db, never()).recordManualExitOrder(any(), any());
         verify(events, never()).publishEvent(any(com.trading.portfolio.events.PositionClosedEvent.class));
+    }
+
+    @Test
+    @DisplayName("manualExit throws when no live price is available for a protected exit order")
+    void manualExit_noLtpAvailable_throws() {
+        Signal signal = buildSignal(1L, "RELIANCE", 2400, 2300, 2600);
+        Position pos = buildActivePosition(10L, user, "RELIANCE", signal, "GTT456", BigDecimal.valueOf(2410));
+
+        when(db.getActivePositions()).thenReturn(List.of(pos));
+        when(db.getUserConfigByUserId(1L)).thenReturn(Optional.of(userConfig));
+        when(brokerAdapterFactory.forUser(userConfig)).thenReturn(broker);
+        when(broker.getQuotes(any())).thenReturn(Map.of());
+        when(livePriceService.getLivePrices(eq(userConfig), eq(Set.of("RELIANCE")))).thenReturn(Map.of());
+
+        assertThatThrownBy(() -> engine.manualExit(10L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("RELIANCE");
+
+        verify(broker, never()).placeMarketSellOrder(anyString(), anyInt(), any(BigDecimal.class), anyString());
+        verify(db, never()).closePosition(any(), any(), any());
     }
 
     @Test

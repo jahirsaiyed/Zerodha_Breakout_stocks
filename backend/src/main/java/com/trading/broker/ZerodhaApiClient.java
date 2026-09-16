@@ -12,6 +12,7 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.*;
@@ -34,6 +35,15 @@ public class ZerodhaApiClient {
     private static final String KITE_VERSION = "3";
     private static final int MAX_RETRIES = 3;
     private static final long BASE_BACKOFF_MS = 1_000;
+
+    /**
+     * Kite Connect rejects bare {@code order_type=MARKET} regular orders placed via the API
+     * ("Market orders without market protection are not allowed via API") and there is no
+     * market_protection field exposed in the public API. The workaround Zerodha recommends is a
+     * LIMIT order priced just past the last traded price, which fills like a market order in
+     * normal conditions while capping worst-case slippage.
+     */
+    private static final BigDecimal MARKET_PROTECTION_BUFFER = new BigDecimal("0.01");
 
     private final String apiKey;
     private final String accessToken;
@@ -86,6 +96,31 @@ public class ZerodhaApiClient {
             form.add("transaction_type", "SELL");
             form.add("quantity", String.valueOf(quantity));
             form.add("order_type", "MARKET");
+            form.add("product", "CNC");
+            form.add("validity", "DAY");
+            form.add("tag", tag);
+
+            JsonNode data = postForm(orderBaseUrl, "/orders/regular", form);
+            return data.path("order_id").asText();
+        });
+    }
+
+    /**
+     * Places a protected "market" sell — a LIMIT order priced {@link #MARKET_PROTECTION_BUFFER}
+     * below the given last traded price — since Kite Connect rejects bare MARKET orders via the
+     * API. See {@link #MARKET_PROTECTION_BUFFER} for why.
+     */
+    public String placeMarketSellOrder(String symbol, int quantity, BigDecimal ltp, String tag) {
+        BigDecimal limitPrice = ltp.multiply(BigDecimal.ONE.subtract(MARKET_PROTECTION_BUFFER))
+                .setScale(2, RoundingMode.HALF_UP);
+        return executeWithRetry(() -> {
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("exchange", "NSE");
+            form.add("tradingsymbol", symbol);
+            form.add("transaction_type", "SELL");
+            form.add("quantity", String.valueOf(quantity));
+            form.add("price", limitPrice.toPlainString());
+            form.add("order_type", "LIMIT");
             form.add("product", "CNC");
             form.add("validity", "DAY");
             form.add("tag", tag);
