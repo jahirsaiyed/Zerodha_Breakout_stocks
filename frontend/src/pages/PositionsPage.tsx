@@ -433,10 +433,16 @@ interface CloseModalProps {
   onSuccess: (msg: string) => void
 }
 
+// A price entered more than 3x above/below the avg entry price is far more likely to be a typo
+// (e.g. the quantity or a stray digit entered into the price field) than a real move, given
+// signals are chosen for modest stop-loss/target distances — so require an extra confirmation.
+const SUSPICIOUS_PRICE_RATIO = 3
+
 function CloseModal({ position, onClose, onSuccess }: CloseModalProps) {
   const qc = useQueryClient()
   const [mode, setMode] = useState<AdjustMode>('LIVE')
   const [exitPrice, setExitPrice] = useState('')
+  const [confirmSuspiciousPrice, setConfirmSuspiciousPrice] = useState(false)
 
   const close = useMutation({
     mutationFn: () => mode === 'LIVE'
@@ -452,7 +458,10 @@ function CloseModal({ position, onClose, onSuccess }: CloseModalProps) {
   })
 
   const priceValid = mode === 'LIVE' || Number(exitPrice) > 0
-  const canSubmit = priceValid && !close.isPending
+  const avgEntry = position.avgEntryPrice
+  const priceIsSuspicious = mode === 'MANUAL' && priceValid && avgEntry != null && avgEntry > 0
+    && (Number(exitPrice) / avgEntry > SUSPICIOUS_PRICE_RATIO || Number(exitPrice) / avgEntry < 1 / SUSPICIOUS_PRICE_RATIO)
+  const canSubmit = priceValid && !close.isPending && (!priceIsSuspicious || confirmSuspiciousPrice)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
@@ -506,8 +515,24 @@ function CloseModal({ position, onClose, onSuccess }: CloseModalProps) {
               <div>
                 <label className="mb-1 block text-sm font-medium text-gray-700">Sale price (₹)</label>
                 <input type="number" min={0} step={0.01} value={exitPrice}
-                  onChange={e => setExitPrice(e.target.value)} placeholder="e.g. 2450" className={inputCls} />
+                  onChange={e => { setExitPrice(e.target.value); setConfirmSuspiciousPrice(false) }}
+                  placeholder="e.g. 2450" className={inputCls} />
               </div>
+
+              {priceIsSuspicious && (
+                <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+                  <p className="text-sm text-red-800">
+                    ₹{exitPrice} is {Number(exitPrice) > avgEntry! ? 'more than' : 'less than'}{' '}
+                    {SUSPICIOUS_PRICE_RATIO}x the avg entry price of ₹{avgEntry!.toFixed(2)} — double-check
+                    this is the actual sale price and not the quantity or a typo.
+                  </p>
+                  <label className="mt-2 flex items-center gap-1.5 text-sm text-red-800">
+                    <input type="checkbox" checked={confirmSuspiciousPrice}
+                      onChange={e => setConfirmSuspiciousPrice(e.target.checked)} />
+                    Yes, ₹{exitPrice} is correct
+                  </label>
+                </div>
+              )}
             </>
           ) : (
             <p className="text-sm text-gray-600">
