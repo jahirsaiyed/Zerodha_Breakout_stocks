@@ -9,6 +9,16 @@ spring:
     username: ${DB_USERNAME:trading}
     password: ${DB_PASSWORD:trading}
     driver-class-name: org.postgresql.Driver
+    hikari:
+      # Recycle connections before an intermediary (Render / pooler) drops them silently,
+      # and ping idle ones so a stale connection is not handed to a request.
+      max-lifetime: 600000
+      keepalive-time: 120000
+      data-source-properties:
+        # Disable server-side prepared statements: avoids 'prepared statement "S_n" already exists'
+        # when a pooler in transaction mode sits between the app and Postgres. Set via properties
+        # (not the URL) because DB_URL is supplied by the environment.
+        prepareThreshold: 0
   jpa:
     hibernate:
       ddl-auto: validate
