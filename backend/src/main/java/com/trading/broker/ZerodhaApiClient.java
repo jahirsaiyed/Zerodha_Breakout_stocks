@@ -44,6 +44,7 @@ public class ZerodhaApiClient {
      * normal conditions while capping worst-case slippage.
      */
     private static final BigDecimal MARKET_PROTECTION_BUFFER = new BigDecimal("0.01");
+    private static final BigDecimal PRICE_TICK = new BigDecimal("0.05");
 
     private final String apiKey;
     private final String accessToken;
@@ -111,8 +112,7 @@ public class ZerodhaApiClient {
      * API. See {@link #MARKET_PROTECTION_BUFFER} for why.
      */
     public String placeMarketSellOrder(String symbol, int quantity, BigDecimal ltp, String tag) {
-        BigDecimal limitPrice = ltp.multiply(BigDecimal.ONE.subtract(MARKET_PROTECTION_BUFFER))
-                .setScale(2, RoundingMode.HALF_UP);
+        BigDecimal limitPrice = protectedSellPrice(ltp);
         return executeWithRetry(() -> {
             MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
             form.add("exchange", "NSE");
@@ -128,6 +128,17 @@ public class ZerodhaApiClient {
             JsonNode data = postForm(orderBaseUrl, "/orders/regular", form);
             return data.path("order_id").asText();
         });
+    }
+
+    /**
+     * LTP less {@link #MARKET_PROTECTION_BUFFER}, rounded down to {@link #PRICE_TICK}. NSE equities
+     * tick at 0.05 (some at 0.01); a multiple of 0.05 is valid for both, and Kite rejects any other price.
+     */
+    static BigDecimal protectedSellPrice(BigDecimal ltp) {
+        BigDecimal raw = ltp.multiply(BigDecimal.ONE.subtract(MARKET_PROTECTION_BUFFER));
+        return raw.divide(PRICE_TICK, 0, RoundingMode.DOWN)
+                .multiply(PRICE_TICK)
+                .setScale(2, RoundingMode.UNNECESSARY);
     }
 
     public String placeMarketBuyOrder(String symbol, int quantity, String tag) {
